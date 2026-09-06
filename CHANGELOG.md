@@ -25,6 +25,13 @@ se algum divergir.
   derivados, os outros dois herdam sozinhos (Cargo workspace inheritance e o
   fallback do `tauri.conf.json` para o `package.json`). `npm run version:check`
   entra no CI para pegar divergência.
+- **`dist-windows/` guarda só a última versão.** A cópia do instalador era
+  manual e a pasta acumulou uma 0.1.0 ao lado da 0.2.0, sem indicar qual era a
+  atual. `npm run build:win` agora termina em `scripts/package-win.mjs`, que
+  limpa a pasta, copia o instalador da versão corrente e grava o `.sha256`.
+  Recusa rodar se o build não bater com o `VERSION` — o diretório de bundle do
+  Tauri também acumula, e publicar o instalador de um build anterior era
+  possível.
 
 ## [0.2.0] — 2026-09-06
 

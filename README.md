@@ -66,6 +66,11 @@ Instalador Windows (NSIS, cruzado a partir do macOS/Linux via `cargo-xwin`):
 npm run build:win
 ```
 
+Ao final ele chama `scripts/package-win.mjs`, que recolhe o `.exe` para
+`dist-windows/` com o `.sha256` ao lado. **Essa pasta guarda apenas a última
+versão buildada** — é diretório de saída, não arquivo histórico, e está no
+`.gitignore`. Releases antigas se reconstroem do git.
+
 Para testar o S3 localmente sem AWS:
 
 ```bash

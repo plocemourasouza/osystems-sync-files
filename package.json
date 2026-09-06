@@ -13,10 +13,11 @@
     "typecheck": "tsc --noEmit",
     "version:sync": "node scripts/version.mjs",
     "version:check": "node scripts/version.mjs --check",
+    "package:win": "node scripts/package-win.mjs",
     "lint": "eslint src",
     "longevity": "node tests/e2e/longevity.mjs",
     "longevity:report": "node tests/e2e/longevity.mjs --mode report",
-    "build:win": "XWIN_ACCEPT_LICENSE=1 PATH=/opt/homebrew/opt/llvm/bin:$PATH CC_x86_64_pc_windows_msvc=clang-cl CXX_x86_64_pc_windows_msvc=clang-cl AR_x86_64_pc_windows_msvc=llvm-lib tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis"
+    "build:win": "XWIN_ACCEPT_LICENSE=1 PATH=/opt/homebrew/opt/llvm/bin:$PATH CC_x86_64_pc_windows_msvc=clang-cl CXX_x86_64_pc_windows_msvc=clang-cl AR_x86_64_pc_windows_msvc=llvm-lib tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis && node scripts/package-win.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
