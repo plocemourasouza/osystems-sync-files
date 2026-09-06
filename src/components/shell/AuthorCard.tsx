@@ -43,14 +43,26 @@ const PROFILES: Profile[] = [
 export function AuthorCard(): JSX.Element {
   return (
     <div className="flex flex-col gap-xs rounded-md border border-border-hairline bg-surface-2 p-md">
+      {/*
+        `text-label-sm` (10px) is already the floor of the type scale, so the
+        label reads smaller by widening the gap to the name rather than by
+        shrinking further: the name goes to `text-title-md` (15px) in the
+        primary colour, a 3px and two-step-of-contrast jump over the 12px
+        secondary it replaced.
+      */}
       <span className="text-label-sm text-text-quaternary">
         {t("shell.sidebar.author.title")}
       </span>
-      <span className="truncate text-body-sm text-text-emphasis">
+      <span className="truncate text-title-md text-text-primary">
         {t("shell.sidebar.author.name")}
       </span>
 
-      <ul className="mt-xs flex flex-row items-center gap-xs">
+      {/*
+        `justify-between` on a full-width row, not a fixed gap: the sidebar has
+        a fixed width, so spreading the four marks edge to edge uses the space
+        that a `gap` would leave dead on the right.
+      */}
+      <ul className="mt-xs flex w-full flex-row items-center justify-between">
         {PROFILES.map(({ link, network, handle, Icon }) => (
           <li key={link}>
             <button
@@ -63,9 +75,9 @@ export function AuthorCard(): JSX.Element {
               }}
               aria-label={t("shell.sidebar.author.linkLabel", { network, handle })}
               title={t("shell.sidebar.author.linkLabel", { network, handle })}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-border-hairline text-text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:shadow-focus"
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-border-hairline text-text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:shadow-focus"
             >
-              <Icon size={15} />
+              <Icon size={17} />
             </button>
           </li>
         ))}
