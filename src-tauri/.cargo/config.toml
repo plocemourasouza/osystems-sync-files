@@ -1,0 +1,12 @@
+# Routes ts-rs (`#[ts(export)]`) output to the frontend types directory instead
+# of the crate-local `bindings/` default. Path is relative to this file's
+# directory (the `src-tauri/` workspace root), per ts-rs 9 docs.
+#
+# Only takes effect when `cargo`'s cwd is `src-tauri/` (or a subdirectory of
+# it) — Cargo config discovery walks up from the invocation's cwd, not from
+# `--manifest-path`. When cwd is the repo root (as in the documented verify
+# command and CI), the root-level `<repo>/.cargo/config.toml` is what
+# actually applies; this file exists for the local-dev case of `cd src-tauri
+# && cargo test`.
+[env]
+TS_RS_EXPORT_DIR = { value = "../src/types/generated", relative = true }

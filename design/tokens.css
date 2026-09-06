@@ -1,0 +1,251 @@
+/**
+ * oSystems Sync — Design Tokens
+ * =============================================================================
+ * PROVENANCE
+ * -----------------------------------------------------------------------------
+ * Colors  : union of hex values found in the two approved mockups' inline
+ *           Tailwind classes and `<script id="tailwind-config">` blocks:
+ *             - assets/osystems_sync_dashboard_fila_de_arquivos/code.html
+ *             - assets/osystems_sync_configura_es_qos_de_banda/code.html
+ *           Where the same semantic role appears with a slightly different
+ *           hex between the two mockups, values were compared with an
+ *           approximate CIE76 ΔE (sRGB → Lab, D65) and merged into one
+ *           canonical token when ΔE < ~6 (perceptually negligible for UI
+ *           purposes). Merges and near-misses that were kept separate are
+ *           logged in `design/README.md`.
+ *
+ * Type / spacing / radius scale names and numeric values ("unit-*",
+ *           "table-row-*", "sidebar-width", the type scale step names, the
+ *           `rounded` scale) come from the PROSE/structural sections of
+ *           `assets/executive_precision/DESIGN.md` — its `colors:` palette
+ *           (frontmatter AND prose hex mentions) is discarded per decision
+ *           C10 below. Font families were swapped from that doc's
+ *           `hankenGrotesk` / `jetbrainsMono` to this project's actual
+ *           vendored fonts per decision C9.
+ *
+ * PROJECT DECISIONS (PRD.md §3)
+ * -----------------------------------------------------------------------------
+ * C9  — Tipografia: Inter (UI) + JetBrains Mono (telemetria), fontes
+ *        vendorizadas. Mockups + doc v2 concordam; app é offline (CSP 'self').
+ * C10 — Tokens de cor: paleta do mockup (`tailwind-config`) é canônica. Bate
+ *        com os PNGs aprovados; DESIGN.md tinha 2 paletas internas divergentes.
+ *
+ * Single dark theme only — this app ships no light theme.
+ * =============================================================================
+ */
+
+/* -----------------------------------------------------------------------------
+ * Fonts (vendored, offline — see C9). Declare only; binaries are not fetched
+ * by this task. Place the actual files under /fonts/ at build time.
+ * -------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono[wght].woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ===========================================================================
+   * COLOR — Surfaces (tonal steps, lowest → highest container)
+   * Source: file1 tailwind-config surface-container-* (identical value in
+   * both mockups for -lowest/-low). file2's -container/-container-high/
+   * -container-highest use slightly lighter near-duplicates, merged below.
+   * ======================================================================== */
+  --color-surface-0: #0c0e12; /* app/window base. merges #080a0d, #0e1017, #0e1117 (file2 bg variants, ΔE ≤ 2.5) */
+  --color-surface-1: #101319; /* sidebar / low container — identical literal value in both mockups */
+  --color-surface-2: #13171f; /* card / container — merges #12151c, #141720 (file2, ΔE ≤ 1.3) */
+  --color-surface-3: #171c26; /* elevated / high container — merges #191d27 (file2, ΔE 0.7) */
+  --color-surface-hover: #1f242e; /* highest container & row-hover fill — merges #212633 (file2, ΔE 2.4). Same literal value as --color-border-hairline (Material "outline-variant" convention, both mockups define it once and reuse it for both roles). */
+
+  /* ===========================================================================
+   * COLOR — Borders
+   * ======================================================================== */
+  --color-border-strong: #475161; /* file1 tailwind "outline". merges #525a6b (file2 "outline", ΔE 4.1) */
+  --color-border-hairline: #1f242e; /* file1 "outline-variant" / file2 "border-subtle" — identical in both mockups, by far the most-used border (47 occurrences across both files) */
+
+  /* ===========================================================================
+   * COLOR — Text (on-surface tonal ramp, brightest → dimmest)
+   * ======================================================================== */
+  --color-on-primary: #f0f4f9; /* text/icons on filled primary surfaces (file1 "on-primary") */
+  --color-text-primary: #e2e4ea; /* file1 "on-surface". merges #d8dce3 (file2, ΔE 3.1) */
+  --color-text-emphasis: #cad2df; /* mono path/value text (titlebar directory chip). merges #c5c9d4 (file2 input values, ΔE 3.4) */
+  --color-text-label: #bcc5d3; /* titlebar app-name label, small emphasized captions */
+  --color-text-status: #b4bece; /* inline status/daemon copy in mono rows. merges #b4bac7 (file2, ΔE 2.4) */
+  --color-text-secondary: #828ea2; /* file1 "on-surface-variant". merges #8e95a5 (file2, ΔE 4.1) */
+  --color-text-tertiary: #788596; /* dim captions, folder subtitles. merges #7a8192 (file2, ΔE 2.4) */
+  --color-text-quaternary: #5f6c80; /* most-muted icons/timestamps/disabled. merges #5b6274 (file2, ΔE 4.3) */
+
+  /* ===========================================================================
+   * COLOR — Brand (primary / secondary / tertiary / error), exact tailwind-
+   * config values, identical role in both mockups (file1 names them
+   * primary/secondary/tertiary/error; file2 renames them gdrive/s3/sage but
+   * keeps the same hue family).
+   * ======================================================================== */
+  --color-primary: #6082a4; /* file1 "primary". merges file2 "gdrive" #5b84ad (ΔE 4.25) */
+  --color-primary-container: #27384a;
+  --color-primary-strong: #4f7cac; /* file2 "gdrive-dim" — saturated fill used for progress bars/slider thumbs/focus rings. ΔE 8.8 vs --color-primary: real, not a duplicate — kept as a distinct fill-vs-text pairing. */
+
+  --color-secondary: #a38258; /* bronze — identical literal hex in both mockups (file1 "secondary" / file2 "s3") */
+  --color-secondary-container: #3d3222;
+  --color-secondary-strong: #8c6e48; /* file2 "s3-dim" — fill color for S3 bars/dots, mirrors --color-primary-strong's role. ΔE 8.3 vs --color-secondary — kept distinct. */
+
+  --color-tertiary: #4e8774; /* sage/success — identical literal hex in both mockups (file1 "tertiary" / file2 "sage") */
+  --color-tertiary-container: #1e372e;
+
+  --color-error: #b95c65;
+  --color-error-container: #381c20;
+
+  --color-danger-hover: #8f3941; /* window-close hover (file1). file2 uses a colder #78282b for the same control (ΔE 8.6 vs this token) — not merged, spec pins the file1 value as canonical. */
+
+  /* ===========================================================================
+   * COLOR — Status/badge backgrounds
+   * Both mockups build these as the brand hex at 10–15% opacity
+   * (e.g. `bg-[#6082a4]/10`, `bg-[#b95c65]/15`) rather than literal rgba()
+   * strings, so they are expressed here as color-mix() against the base
+   * tokens instead of duplicating hex values.
+   * ======================================================================== */
+  --color-status-info-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --color-status-success-bg: color-mix(in srgb, var(--color-tertiary) 10%, transparent);
+  --color-status-warning-bg: color-mix(in srgb, var(--color-secondary) 10%, transparent);
+  --color-status-error-bg: color-mix(in srgb, var(--color-error) 12%, transparent);
+
+  /* ===========================================================================
+   * TYPOGRAPHY — Families (C9: Inter for UI, JetBrains Mono for telemetry)
+   * ======================================================================== */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  /* ===========================================================================
+   * TYPOGRAPHY — Scale (names + sizes from DESIGN.md `typography:`; font
+   * families swapped hankenGrotesk → Inter, jetbrainsMono → JetBrains Mono
+   * per C9). Each step exposes size / line-height / weight / tracking so it
+   * can be consumed directly or re-exported under Tailwind v4 @theme
+   * namespaces (--text-*, --font-weight-*, --tracking-*, --leading-*).
+   * ======================================================================== */
+  --text-display-family: var(--font-sans);
+  --text-display-size: 2rem;
+  --text-display-leading: 2.5rem;
+  --text-display-weight: 600;
+  --text-display-tracking: -0.025em;
+
+  --text-headline-lg-family: var(--font-sans);
+  --text-headline-lg-size: 1.5rem;
+  --text-headline-lg-leading: 2rem;
+  --text-headline-lg-weight: 600;
+  --text-headline-lg-tracking: -0.02em;
+
+  --text-headline-md-family: var(--font-sans);
+  --text-headline-md-size: 1.25rem;
+  --text-headline-md-leading: 1.75rem;
+  --text-headline-md-weight: 500;
+  --text-headline-md-tracking: -0.015em;
+
+  --text-headline-sm-family: var(--font-sans);
+  --text-headline-sm-size: 1.125rem;
+  --text-headline-sm-leading: 1.5rem;
+  --text-headline-sm-weight: 500;
+  --text-headline-sm-tracking: -0.01em;
+
+  --text-title-md-family: var(--font-sans);
+  --text-title-md-size: 0.9375rem;
+  --text-title-md-leading: 1.375rem;
+  --text-title-md-weight: 500;
+  --text-title-md-tracking: -0.005em;
+
+  --text-body-lg-family: var(--font-sans);
+  --text-body-lg-size: 0.9375rem;
+  --text-body-lg-leading: 1.5rem;
+  --text-body-lg-weight: 400;
+  --text-body-lg-tracking: 0em;
+
+  --text-body-md-family: var(--font-sans);
+  --text-body-md-size: 0.8125rem;
+  --text-body-md-leading: 1.25rem;
+  --text-body-md-weight: 400;
+  --text-body-md-tracking: 0em;
+
+  --text-body-sm-family: var(--font-sans);
+  --text-body-sm-size: 0.75rem;
+  --text-body-sm-leading: 1.125rem;
+  --text-body-sm-weight: 400;
+  --text-body-sm-tracking: 0.01em;
+
+  /* body-xs — densest sans step, added for the 40px JobTable row (file name). */
+  --text-body-xs-family: var(--font-sans);
+  --text-body-xs-size: 0.6875rem;
+  --text-body-xs-leading: 0.9375rem;
+  --text-body-xs-weight: 400;
+  --text-body-xs-tracking: 0.01em;
+
+  --text-mono-data-family: var(--font-mono);
+  --text-mono-data-size: 0.8125rem;
+  --text-mono-data-leading: 1.25rem;
+  --text-mono-data-weight: 400;
+  --text-mono-data-tracking: -0.01em;
+
+  --text-label-md-family: var(--font-mono);
+  --text-label-md-size: 0.6875rem;
+  --text-label-md-leading: 1rem;
+  --text-label-md-weight: 500;
+  --text-label-md-tracking: 0.06em; /* uppercase mono labels — DESIGN.md min tracking */
+
+  --text-label-sm-family: var(--font-mono);
+  --text-label-sm-size: 0.625rem;
+  --text-label-sm-leading: 0.875rem;
+  --text-label-sm-weight: 500;
+  --text-label-sm-tracking: 0.08em; /* uppercase mono labels — DESIGN.md max tracking */
+
+  /* ===========================================================================
+   * SPACING — 4px grid, names from DESIGN.md `spacing.unit-*`
+   * ======================================================================== */
+  --space-2xs: 0.125rem; /* 2px */
+  --space-xs: 0.25rem; /* 4px */
+  --space-sm: 0.5rem; /* 8px */
+  --space-md: 0.75rem; /* 12px */
+  --space-lg: 1rem; /* 16px */
+  --space-xl: 1.5rem; /* 24px */
+  --space-2xl: 2rem; /* 32px */
+  --space-3xl: 3rem; /* 48px */
+
+  /* ===========================================================================
+   * LAYOUT — Chrome dimensions
+   * ======================================================================== */
+  --layout-titlebar-h: 36px; /* mockup uses h-9 (36px), not file2's h-10 (40px) */
+  --layout-statusbar-h: 28px; /* footer h-7 in both mockups */
+  --layout-sidebar-w: 16rem; /* w-64 in both mockups; matches DESIGN.md sidebar-width */
+  --layout-inspector-w: 20rem; /* DESIGN.md inspector-width — not yet built in either mockup, reserved for a future detail pane */
+  --layout-row-compact: 1.75rem; /* 28px — DESIGN.md table-row-compact */
+  --layout-row-regular: 2.25rem; /* 36px — DESIGN.md table-row-regular */
+
+  /* ===========================================================================
+   * RADIUS — DESIGN.md `rounded` scale
+   * ======================================================================== */
+  --radius-sm: 2px;
+  --radius: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+
+  /* ===========================================================================
+   * SHADOW / FOCUS
+   * ======================================================================== */
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.65);
+  --ring-focus: 0 0 0 1px color-mix(in srgb, var(--color-primary) 33%, transparent);
+
+  /* ===========================================================================
+   * MOTION — no bounce/spring, ever
+   * ======================================================================== */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}

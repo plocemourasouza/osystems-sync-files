@@ -1,0 +1,15 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen
+.DS_Store
+
+# Secrets — never committed (T-6.3 audit MINOR #10)
+.env
+.env.*
+
+# Stale ts-rs default output dir. Exports now go to src/types/generated/
+# (routed by .cargo/config.toml + src-tauri/.cargo/config.toml, T-1.4).
+src-tauri/crates/core/bindings/
+dist-windows/
+chaves.md

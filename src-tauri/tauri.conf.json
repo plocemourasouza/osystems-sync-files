@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "oSystems Sync",
+  "version": "0.1.0",
+  "identifier": "com.osystems.sync",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "oSystems Sync Files to Drive & S3 Buckets",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "decorations": false,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; font-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "publisher": "oSystems",
+    "category": "Utility",
+    "copyright": "Copyright © 2026 oSystems. Todos os direitos reservados.",
+    "shortDescription": "Sincronização automática de arquivos para Google Drive e AWS S3.",
+    "longDescription": "oSystems Sync monitora uma pasta local e replica cada novo arquivo, sem intervenção humana, para uma pasta no Google Drive e um bucket AWS S3 em paralelo. Roda em segundo plano na bandeja do Windows, com fila persistente, retry automático e controle de banda, projetado para operar 10+ dias sem intervenção.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "allowDowngrades": false,
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["PortugueseBR", "English"],
+        "displayLanguageSelector": false,
+        "startMenuFolder": "oSystems Sync",
+        "installerHooks": "./nsis/hooks.nsh"
+      },
+      "wix": {
+        "language": ["pt-BR"]
+      },
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com"
+    }
+  }
+}

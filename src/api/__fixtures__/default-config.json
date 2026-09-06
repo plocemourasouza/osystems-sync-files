@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "watch": {
+    "path": null,
+    "recursive": false,
+    "extensions": [],
+    "min_size_mb": 0,
+    "max_size_mb": 0,
+    "stabilize_seconds": 3
+  },
+  "s3": {
+    "enabled": false,
+    "region": "us-east-1",
+    "bucket": "",
+    "prefix": "",
+    "storage_class": "STANDARD"
+  },
+  "gdrive": {
+    "enabled": false,
+    "folder_id": "",
+    "auth_mode": "service_account",
+    "date_subfolders": false
+  },
+  "qos": {
+    "gdrive_limit_mbps": null,
+    "s3_limit_mbps": null,
+    "night_mode": {
+      "enabled": false,
+      "start": "23:00",
+      "end": "06:00"
+    }
+  },
+  "retry": {
+    "max_attempts": 5,
+    "base_delay_seconds": 5
+  },
+  "workers_per_destination": 2,
+  "autostart": true,
+  "keep_awake": true
+}

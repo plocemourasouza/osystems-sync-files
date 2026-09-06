@@ -1,0 +1,405 @@
+{
+  "shell": {
+    "titleBar": {
+      "appName": "oSystems Sync",
+      "appTagline": "Files to Drive & S3 Buckets",
+      "noFolder": "Nenhuma pasta",
+      "daemonActive": "Daemon: Active",
+      "daemonInactive": "Daemon: Inativo",
+      "minimize": "Minimizar",
+      "maximize": "Maximizar",
+      "close": "Fechar"
+    },
+    "sidebar": {
+      "nav": {
+        "queue": "Arquivos & Fila",
+        "settings": "Configurações",
+        "settingsBadge": "QoS"
+      },
+      "brand": {
+        "name": "oSystems",
+        "tagline": "Sync Files to Drive & S3 Buckets"
+      },
+      "folderCard": {
+        "title": "Diretório monitorado",
+        "emptyPath": "Nenhuma pasta selecionada",
+        "emptyCta": "Escolher pasta",
+        "changeCta": "Alterar pasta"
+      },
+      "author": {
+        "title": "Criado por",
+        "name": "Paulo Souza",
+        "linkLabel": "{network}: {handle} — abre no navegador"
+      },
+      "watcher": {
+        "activeBadge": "Watcher: Ativo",
+        "pausedBadge": "Watcher: Pausado"
+      },
+      "throughput": {
+        "title": "Throughput de banda",
+        "unlimited": "Ilimitado",
+        "gdrive": "GDrive",
+        "s3": "S3"
+      }
+    },
+    "statusBar": {
+      "online": "Online",
+      "offline": "Offline",
+      "authRequired": "Autenticação necessária",
+      "coreVersion": "Rust Core v{version} ({status})",
+      "coreStatusActive": "Active",
+      "coreStatusInactive": "Inativo",
+      "ping": "Ping: {ms} ms",
+      "gdrive": "GDrive",
+      "s3": "AWS S3"
+    }
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Fila de Sincronização em Tempo Real",
+      "placeholder": "Placeholder — KPIs, tabela dupla e console chegam na Fase 2.",
+      "kpi": {
+        "detected": {
+          "label": "Total Detectados"
+        },
+        "done": {
+          "label": "Concluídos",
+          "sub": "{pct}% da carga"
+        },
+        "uploading": {
+          "label": "Em Transferência",
+          "sub": "Concorrentes"
+        },
+        "queued": {
+          "label": "Na Fila",
+          "sub": "Aguardando slot"
+        },
+        "failed": {
+          "label": "Falhas Detectadas",
+          "sub": "Requer atenção"
+        }
+      },
+      "header": {
+        "watcherActive": "Watcher Ativo • Monitorando {count} arquivos",
+        "watcherPaused": "Watcher Pausado"
+      },
+      "actions": {
+        "rescan": "Atualizar Lista",
+        "rescanQueued": "{count} enfileirados",
+        "rescanArchived": "{count} removidos pelo filtro",
+        "rescanRestored": "{count} recuperados",
+        "pause": "Pausar Watcher",
+        "resume": "Retomar Watcher",
+        "clearDone": "Limpar Concluídos",
+        "clearDoneCount": "{count} arquivos arquivados",
+        "retryFailed": "Reenviar Falhas",
+        "retryFailedCount": "{count} reenviados"
+      },
+      "empty": {
+        "noFolder": {
+          "title": "Nenhuma pasta configurada",
+          "body": "Escolha a pasta que deseja monitorar para iniciar a sincronização com Google Drive ou Amazon S3.",
+          "cta": "Escolher pasta",
+          "hint": "Você também pode alterar pela sidebar."
+        },
+        "noCredentials": {
+          "title": "Nenhuma credencial configurada",
+          "body": "Configure o Google Drive ou o Amazon S3 para começar a enviar os arquivos já detectados nesta pasta.",
+          "cta": "Configurar"
+        }
+      },
+      "console": {
+        "title": "Console de Eventos em Tempo Real",
+        "daemonChip": "Rust core",
+        "collapseLabel": "Recolher console de eventos",
+        "expandLabel": "Expandir console de eventos",
+        "levelLabel": "Nível",
+        "levelAll": "Todos",
+        "levelDebug": "Debug",
+        "levelInfo": "Info",
+        "levelWarn": "Aviso",
+        "levelError": "Erro",
+        "live": "● Live Streaming",
+        "liveText": "Live Streaming",
+        "tickerLabel": "Última linha do log",
+        "openFolder": "Abrir pasta de logs",
+        "lineCount": "{count} linhas",
+        "newLinesPill": "↓ Novas linhas"
+      },
+      "filters": {
+        "groupLabel": "Filtro de status",
+        "all": "Todos",
+        "active": "Ativos",
+        "done": "Concluídos",
+        "failed": "Falhas"
+      },
+      "status": {
+        "uploading": "Enviando",
+        "done": "Sincronizado",
+        "queued": "Na Fila",
+        "failed": "Falha",
+        "paused": "Pausado",
+        "cancelled": "Cancelado"
+      },
+      "table": {
+        "headers": {
+          "fileOrigin": "Arquivo & Origem",
+          "size": "Tamanho",
+          "gdrive": "Google Drive",
+          "s3": "AWS S3",
+          "status": "Status",
+          "actions": "Ações"
+        },
+        "emptyFiltered": "Nenhum arquivo neste filtro",
+        "queued": "Fila",
+        "paused": "Pausado",
+        "shaOk": "SHA OK",
+        "etagOk": "ETag OK",
+        "details": "Detalhes",
+        "unknownError": "Erro desconhecido",
+        "phase3": "Disponível na Fase 3",
+        "gdriveProgressLabel": "Progresso do envio ao Google Drive",
+        "s3ProgressLabel": "Progresso do envio ao AWS S3",
+        "actions": {
+          "openExplorer": "Abrir no Explorer",
+          "copyPath": "Copiar caminho",
+          "copyPathFailed": "Não foi possível copiar o caminho",
+          "retry": "Reenviar",
+          "pause": "Pausar",
+          "resume": "Retomar",
+          "cancel": "Cancelar",
+          "openRemote": "Abrir remoto",
+          "openRemoteTo": "Abrir no {destination}",
+          "errorDetails": "Detalhes do erro"
+        },
+        "errorDialog": {
+          "destination": "Destino",
+          "attempts": "Tentativas",
+          "nextAttempt": "Próxima tentativa",
+          "noNextAttempt": "—",
+          "close": "Fechar"
+        },
+        "pagination": {
+          "navLabel": "Paginação da fila de arquivos",
+          "prev": "Página anterior",
+          "next": "Próxima página",
+          "pageLabel": "{page} / {total}"
+        }
+      },
+      "authBanner": {
+        "title": "Autenticação necessária em {destination}",
+        "defaultHint": "Verifique as credenciais e tente novamente.",
+        "settings": "Ir para Configurações",
+        "settingsAriaLabel": "Navegar para Configurações para reautenticar {destination}",
+        "dismiss": "Dispensar",
+        "dismissAriaLabel": "Dispensar alerta de autenticação para {destination}"
+      }
+    },
+    "settings": {
+      "title": "Configurações & QoS de Banda",
+      "subtitle": "Preferências gerais de sincronização, desempenho e filtros do watcher. Módulos de Google Drive, Amazon S3 e QoS chegam nas próximas tarefas.",
+      "general": {
+        "title": "Geral",
+        "system": {
+          "heading": "Sistema",
+          "autostart": {
+            "label": "Iniciar com o Windows"
+          },
+          "keepAwake": {
+            "label": "Manter o computador acordado",
+            "description": "Impede a suspensão automática durante uploads em andamento; não força a tela a permanecer ligada."
+          }
+        },
+        "performance": {
+          "heading": "Desempenho",
+          "workers": {
+            "label": "Workers por destino"
+          },
+          "maxAttempts": {
+            "label": "Tentativas máximas"
+          },
+          "baseDelay": {
+            "label": "Atraso base (s)"
+          }
+        },
+        "watcher": {
+          "heading": "Filtros do watcher",
+          "scopeNote": "Os filtros valem para arquivos novos. Para aplicá-los ao que já está na fila, use \"Atualizar Lista\" no painel.",
+          "pathLabel": "Pasta monitorada",
+          "noFolder": "Nenhuma pasta selecionada",
+          "pathHint": "Altere pela sidebar.",
+          "recursive": {
+            "label": "Incluir subpastas"
+          },
+          "extensions": {
+            "label": "Extensões permitidas",
+            "hint": "Separe por vírgula ou espaço. Vazio = todas as extensões."
+          },
+          "minSize": {
+            "label": "Tamanho mínimo (MB)",
+            "hint": "0 = sem mínimo. Arquivos menores que isso são ignorados."
+          },
+          "maxSize": {
+            "label": "Tamanho máximo (MB)",
+            "hint": "0 = sem limite. O teto passa a ser o do destino (5 TB)."
+          },
+          "stabilize": {
+            "label": "Segundos de estabilização"
+          }
+        }
+      },
+      "s3": {
+        "title": "Amazon S3",
+        "subtitle": "AWS IAM Signature V4",
+        "enabledLabel": "Habilitado",
+        "statusConfigured": "Configurado",
+        "statusUnconfigured": "Não configurado",
+        "statusSaved": "Credenciais salvas",
+        "statusConnected": "Conectado / Online",
+        "statusAttention": "Requer atenção",
+        "accessKeyLabel": "Access Key ID",
+        "secretKeyLabel": "Secret Access Key",
+        "secretTag": "IAM • KEYRING",
+        "credentialsLater": "Disponível na Fase 3",
+        "replaceButton": "Substituir",
+        "saveCredentialsButton": "Salvar credenciais",
+        "savedConfirmation": "Credenciais salvas no Windows Credential Manager",
+        "removeButton": "Remover",
+        "removeDialog": {
+          "title": "Remover credenciais da AWS?",
+          "body": "O Access Key ID e a Secret Access Key serão apagados do Windows Credential Manager. Uploads para o S3 param até que novas credenciais sejam salvas.",
+          "confirm": "Remover",
+          "cancel": "Cancelar"
+        },
+        "regionLabel": "Região AWS",
+        "bucketLabel": "Bucket",
+        "prefixLabel": "Prefixo",
+        "prefixHint": "exportacoes/",
+        "storageClassLabel": "Storage Class",
+        "testButton": "Testar bucket",
+        "testResultSuccess": "✓ {ms} ms • {message}",
+        "testResultError": "✕ {message}",
+        "testHintNoCredentials": "Salve as credenciais da AWS para testar o bucket.",
+        "testHintNoBucket": "Informe o nome do bucket para testar.",
+        "testHintDirty": "Salve a configuração (Ctrl+S) para testar com as alterações atuais.",
+        "testHintReady": "Pronto para testar."
+      },
+      "gdrive": {
+        "title": "Google Drive",
+        "subtitle": "Service Account JSON Auth",
+        "enabledLabel": "Habilitado",
+        "statusUnconfigured": "Não configurado",
+        "statusSaved": "Service Account salva",
+        "statusConnected": "Conectado / Online",
+        "statusAttention": "Requer atenção",
+        "credentialLabel": "Service Account (JSON)",
+        "clientEmailLabel": "E-mail da Service Account",
+        "projectIdLabel": "Project ID",
+        "fileInfo": "{fileName} • {size}",
+        "selectJsonButton": "Selecionar JSON da Service Account",
+        "replaceButton": "Substituir JSON",
+        "removeButton": "Remover",
+        "removeDialog": {
+          "title": "Remover Service Account do Google Drive?",
+          "body": "A credencial será apagada do Windows Credential Manager. Uploads para o Google Drive param até que uma nova Service Account seja selecionada.",
+          "confirm": "Remover",
+          "cancel": "Cancelar"
+        },
+        "pickError": "Não foi possível selecionar o arquivo.",
+        "folderIdLabel": "ID da pasta de destino (Folder ID)",
+        "copyAria": "Copiar ID da pasta",
+        "openAria": "Abrir no Google Drive",
+        "openTitleDisabled": "Fase futura",
+        "dateSubfoldersLabel": "Criar subpastas automaticamente por data",
+        "dateSubfoldersDescription": "YYYY/MM/DD_backup/",
+        "dateSubfoldersNote": "Aplica-se a novos uploads",
+        "checksumLabel": "Habilitar checksum SHA-256 pré-upload",
+        "checksumDescription": "Sempre ativo",
+        "testButton": "Testar conexão",
+        "testResultSuccess": "✓ {ms} ms • {message}",
+        "testResultError": "✕ {message}",
+        "testHintNoCredentials": "Selecione a Service Account para testar a conexão.",
+        "testHintNoFolder": "Informe o ID da pasta para testar.",
+        "testHintDirty": "Salve a configuração (Ctrl+S) para testar com as alterações atuais.",
+        "testHintReady": "Pronto para testar."
+      },
+      "qos": {
+        "title": "Controle de Vazão e QoS de Largura de Banda",
+        "subtitle": "Defina limites máximos de transferência por conector para preservar estabilidade de rede.",
+        "gdrive": {
+          "label": "Teto Google Drive"
+        },
+        "s3": {
+          "label": "Teto AWS S3"
+        },
+        "applied": "Aplicado",
+        "nightMode": {
+          "label": "Modo Noturno (Sem Limites)",
+          "schedule": "Liberado das {start} às {end}",
+          "startLabel": "Início",
+          "endLabel": "Fim",
+          "timeInvalid": "Use o formato HH:MM"
+        }
+      },
+      "footer": {
+        "lastSaved": "Última alteração salva às {time}",
+        "neverSaved": "Nenhuma alteração salva ainda",
+        "unsavedBadge": "Alterações não salvas",
+        "issuesCount": "{count} campo(s) com erro de validação",
+        "cancelButton": "Cancelar",
+        "restoreButton": "Restaurar padrões",
+        "saveButton": "Salvar preferências",
+        "saveShortcutHint": "Ctrl+S",
+        "restoreDialog": {
+          "title": "Restaurar padrões?",
+          "body": "QoS, filtros do watcher e workers por destino voltam aos valores de fábrica. Credenciais e a pasta monitorada são mantidas.",
+          "confirm": "Restaurar",
+          "cancel": "Não restaurar"
+        }
+      }
+    }
+  },
+  "common": {
+    "accessibility": {
+      "skipToContent": "Ir para o conteúdo"
+    },
+    "buttons": {
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "reset": "Restaurar padrões"
+    },
+    "status": {
+      "unlimited": "Ilimitado",
+      "online": "Online",
+      "offline": "Offline"
+    },
+    "show": "Mostrar",
+    "hide": "Ocultar",
+    "valueOutOfRange": "Valor fora do intervalo permitido ({min}–{max})."
+  },
+  "errors": {
+    "gdrive": {
+      "forbidden": "Pasta não compartilhada com a Service Account. Compartilhe com {email}.",
+      "notFound": "Pasta não encontrada no Google Drive.",
+      "invalidJson": "Arquivo JSON da Service Account inválido ou corrompido.",
+      "quotaExceeded": "Cota de armazenamento do Google Drive excedida. Tente novamente mais tarde.",
+      "rateLimited": "Muitas requisições ao Google Drive. Tente novamente em alguns minutos.",
+      "invalidGrant": "Falha ao autenticar com a Service Account. Verifique se a data/hora do sistema está correta."
+    },
+    "s3": {
+      "accessDenied": "Acesso negado ao bucket S3. Verifique as credenciais e permissões IAM.",
+      "noSuchBucket": "Bucket S3 não encontrado.",
+      "invalidAccessKey": "Access Key ID inválido.",
+      "signatureMismatch": "Assinatura de requisição não corresponde. Verifique a Secret Access Key.",
+      "wrongRegion": "Região errada. Esperado: {expected}.",
+      "network": "Erro de rede ao conectar ao S3. Verifique sua conexão de internet."
+    },
+    "config": {
+      "invalid": "Configuração inválida no campo '{field}'."
+    },
+    "keyring": {
+      "unavailable": "Gerenciador de credenciais do sistema indisponível."
+    },
+    "unknown": "Erro desconhecido. Verifique os logs para mais detalhes."
+  }
+}

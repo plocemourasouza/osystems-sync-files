@@ -1,0 +1,13 @@
+# Routes ts-rs (`#[ts(export)]`) output to the frontend types directory.
+#
+# NOTE (deviation from the original task spec): Cargo discovers config.toml
+# by walking UP the directory tree from the *current working directory* of
+# the invocation, not from --manifest-path. Both prescribed invocations
+# (`cd <repo> && cargo test -p osystems-sync-core --manifest-path
+# src-tauri/Cargo.toml`, and CI, whose steps run with cwd = $GITHUB_WORKSPACE)
+# use the repo root as cwd, so a config.toml under `src-tauri/.cargo/` is
+# NEVER discovered there (verified empirically) and this file is what
+# actually makes TS_RS_EXPORT_DIR apply. See src-tauri/.cargo/config.toml
+# for the sibling copy used when developing with cwd inside `src-tauri/`.
+[env]
+TS_RS_EXPORT_DIR = { value = "src/types/generated", relative = true }

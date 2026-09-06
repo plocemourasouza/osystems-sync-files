@@ -1,0 +1,67 @@
+[workspace]
+members = [".", "crates/core"]
+resolver = "2"
+
+# Release profile for the Windows installer build (T-6.4, `.github/workflows/release.yml`).
+# `opt-level = 3` (speed) over `"s"` (size): the app's hot paths are CPU-bound —
+# full-file SHA-256 hashing (SPEC.md §12 decision C5) and S3/Drive upload chunking —
+# so upload throughput matters more than installer size for a background sync agent.
+# `lto = "thin"` + `codegen-units = 1` trade longer CI build time for better cross-crate
+# inlining between `osystems-sync-core` and the Tauri shell; `strip = true` drops debug
+# symbols from the shipped binary (smaller installer, no source paths leaked).
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[package]
+name = "osystems-sync"
+version = "0.1.0"
+description = "oSystems Sync — Windows desktop agent for Google Drive & S3 sync"
+authors = ["oSystems"]
+edition = "2021"
+
+[lib]
+# The `_lib` suffix is necessary to make the lib name unique and not
+# conflict with the bin name on Windows (see tauri-apps/tauri#2039).
+name = "osystems_sync_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Same version/features as the core crate. Needed here because `AuthorLink`
+# (commands::system) is the one IPC type defined in the adapter rather than in
+# core — the author's profile links are UI content, not business logic, so they
+# do not belong behind the core boundary. SPEC.md §12.
+ts-rs = { version = "9", features = ["serde-compat", "no-serde-warnings"] }
+osystems-sync-core = { path = "crates/core" }
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tracing = "0.1"
+# `sync` only, for `tokio::sync::broadcast::error::RecvError` — the type returned by
+# `LoggingHandle::subscribe()` (core) that `events::should_forward` (T-2.7) matches on.
+# `osystems-sync-core` already pulls in `tokio` with `full`; this crate only needs to
+# *name* the one type, not run its own runtime (that's `tauri::async_runtime`'s job).
+tokio = { version = "1", default-features = false, features = ["sync"] }
+# `CancellationToken` for `health::spawn`'s shutdown handle (T-3.9) — same version core
+# already resolves, so this doesn't add a second copy to the dependency tree.
+tokio-util = "0.7"
+# `Utc::now().to_rfc3339()` for `commands::queue::clear_completed`'s `Repo::clear_completed(now)`
+# argument (T-3.9) — same version core already resolves.
+chrono = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+# Re-declares the path dependency above with `test-support` enabled so this crate's own
+# tests can reach `osystems_sync_core::credentials::MemoryStore` (MINOR #7 / T-6.3
+# audit). Cargo's resolver "2" keeps this feature scoped to test/bench builds of this
+# crate — an ordinary `cargo build --release` never sees it.
+osystems-sync-core = { path = "crates/core", features = ["test-support"] }

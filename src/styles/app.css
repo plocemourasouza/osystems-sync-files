@@ -1,0 +1,243 @@
+/**
+ * oSystems Sync — Tailwind v4 theme entry point
+ * =============================================================================
+ * Bridges `design/tokens.css` (source of truth, read-only — see
+ * design/README.md and design/DESIGN.md §12) into Tailwind's `@theme`, so
+ * every semantic token becomes a Tailwind utility (bg-surface-1,
+ * text-text-secondary, font-mono, rounded-md, h-titlebar, ...).
+ *
+ * `@theme inline` (not the plain `@theme` shown in design/DESIGN.md §12's
+ * code sample) is used deliberately: every mapping below re-declares a theme
+ * variable under the *same name* as the token it points to (e.g.
+ * `--color-surface-0: var(--color-surface-0)`), because that is the naming
+ * scheme design/README.md specifies. Under a plain `@theme` block Tailwind
+ * re-emits that same custom property on `:root`, which — same name on both
+ * sides — becomes a self-referencing custom property and resolves to the
+ * CSS "guaranteed-invalid" value per the custom-properties spec. `@theme
+ * inline` avoids this: Tailwind resolves the `var(...)` right-hand side
+ * against the value already established by the `tokens.css` import below and
+ * bakes that resolved value into each generated utility/variable instead of
+ * re-declaring the same custom property name. This is the exact pattern
+ * Tailwind's own docs use for theme colors that reference pre-existing CSS
+ * variables (https://tailwindcss.com/docs/colors — "Referencing other
+ * variables"). Single dark theme only (no runtime theme switch in this app),
+ * so inlining costs nothing.
+ * =============================================================================
+ */
+@import "tailwindcss";
+@import "../../design/tokens.css";
+
+@theme inline {
+  /* ===========================================================================
+   * FONT FAMILIES
+   * ======================================================================== */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  /* ===========================================================================
+   * COLOR — 1:1 with every --color-* token in design/tokens.css
+   * ======================================================================== */
+  --color-surface-0: var(--color-surface-0);
+  --color-surface-1: var(--color-surface-1);
+  --color-surface-2: var(--color-surface-2);
+  --color-surface-3: var(--color-surface-3);
+  --color-surface-hover: var(--color-surface-hover);
+
+  --color-border-strong: var(--color-border-strong);
+  --color-border-hairline: var(--color-border-hairline);
+
+  --color-on-primary: var(--color-on-primary);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-emphasis: var(--color-text-emphasis);
+  --color-text-label: var(--color-text-label);
+  --color-text-status: var(--color-text-status);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+  --color-text-quaternary: var(--color-text-quaternary);
+
+  --color-primary: var(--color-primary);
+  --color-primary-container: var(--color-primary-container);
+  --color-primary-strong: var(--color-primary-strong);
+
+  --color-secondary: var(--color-secondary);
+  --color-secondary-container: var(--color-secondary-container);
+  --color-secondary-strong: var(--color-secondary-strong);
+
+  --color-tertiary: var(--color-tertiary);
+  --color-tertiary-container: var(--color-tertiary-container);
+
+  --color-error: var(--color-error);
+  --color-error-container: var(--color-error-container);
+
+  --color-danger-hover: var(--color-danger-hover);
+
+  --color-status-info-bg: var(--color-status-info-bg);
+  --color-status-success-bg: var(--color-status-success-bg);
+  --color-status-warning-bg: var(--color-status-warning-bg);
+  --color-status-error-bg: var(--color-status-error-bg);
+
+  /* ===========================================================================
+   * TYPOGRAPHY SCALE — each step maps into the four namespaces Tailwind v4
+   * derives type utilities from: --text-* (+ --line-height suffix) for
+   * text-<step>, --font-weight-* for font-<step>, --tracking-* for
+   * tracking-<step>, and --font-* for the step's own family utility
+   * (font-<step>, distinct from the size-only text-<step>). Per
+   * design/DESIGN.md §3 / §12; the per-step --font-* mapping is this file's
+   * own addition so the token's -family sub-token (e.g.
+   * --text-headline-lg-family) is independently reachable as a utility, not
+   * just indirectly via font-sans/font-mono.
+   * ======================================================================== */
+  --text-display: var(--text-display-size);
+  --text-display--line-height: var(--text-display-leading);
+  --font-weight-display: var(--text-display-weight);
+  --tracking-display: var(--text-display-tracking);
+  --font-display: var(--text-display-family);
+
+  --text-headline-lg: var(--text-headline-lg-size);
+  --text-headline-lg--line-height: var(--text-headline-lg-leading);
+  --font-weight-headline-lg: var(--text-headline-lg-weight);
+  --tracking-headline-lg: var(--text-headline-lg-tracking);
+  --font-headline-lg: var(--text-headline-lg-family);
+
+  --text-headline-md: var(--text-headline-md-size);
+  --text-headline-md--line-height: var(--text-headline-md-leading);
+  --font-weight-headline-md: var(--text-headline-md-weight);
+  --tracking-headline-md: var(--text-headline-md-tracking);
+  --font-headline-md: var(--text-headline-md-family);
+
+  --text-headline-sm: var(--text-headline-sm-size);
+  --text-headline-sm--line-height: var(--text-headline-sm-leading);
+  --font-weight-headline-sm: var(--text-headline-sm-weight);
+  --tracking-headline-sm: var(--text-headline-sm-tracking);
+  --font-headline-sm: var(--text-headline-sm-family);
+
+  --text-title-md: var(--text-title-md-size);
+  --text-title-md--line-height: var(--text-title-md-leading);
+  --font-weight-title-md: var(--text-title-md-weight);
+  --tracking-title-md: var(--text-title-md-tracking);
+  --font-title-md: var(--text-title-md-family);
+
+  --text-body-lg: var(--text-body-lg-size);
+  --text-body-lg--line-height: var(--text-body-lg-leading);
+  --font-weight-body-lg: var(--text-body-lg-weight);
+  --tracking-body-lg: var(--text-body-lg-tracking);
+  --font-body-lg: var(--text-body-lg-family);
+
+  --text-body-md: var(--text-body-md-size);
+  --text-body-md--line-height: var(--text-body-md-leading);
+  --font-weight-body-md: var(--text-body-md-weight);
+  --tracking-body-md: var(--text-body-md-tracking);
+  --font-body-md: var(--text-body-md-family);
+
+  --text-body-sm: var(--text-body-sm-size);
+  --text-body-sm--line-height: var(--text-body-sm-leading);
+  --font-weight-body-sm: var(--text-body-sm-weight);
+  --tracking-body-sm: var(--text-body-sm-tracking);
+  --font-body-sm: var(--text-body-sm-family);
+
+  --text-body-xs: var(--text-body-xs-size);
+  --text-body-xs--line-height: var(--text-body-xs-leading);
+  --font-weight-body-xs: var(--text-body-xs-weight);
+  --tracking-body-xs: var(--text-body-xs-tracking);
+  --font-body-xs: var(--text-body-xs-family);
+
+  --text-mono-data: var(--text-mono-data-size);
+  --text-mono-data--line-height: var(--text-mono-data-leading);
+  --font-weight-mono-data: var(--text-mono-data-weight);
+  --tracking-mono-data: var(--text-mono-data-tracking);
+  --font-mono-data: var(--text-mono-data-family);
+
+  --text-label-md: var(--text-label-md-size);
+  --text-label-md--line-height: var(--text-label-md-leading);
+  --font-weight-label-md: var(--text-label-md-weight);
+  --tracking-label-md: var(--text-label-md-tracking);
+  --font-label-md: var(--text-label-md-family);
+
+  --text-label-sm: var(--text-label-sm-size);
+  --text-label-sm--line-height: var(--text-label-sm-leading);
+  --font-weight-label-sm: var(--text-label-sm-weight);
+  --tracking-label-sm: var(--text-label-sm-tracking);
+  --font-label-sm: var(--text-label-sm-family);
+
+  /* ===========================================================================
+   * RADIUS
+   * ======================================================================== */
+  --radius-sm: var(--radius-sm);
+  --radius: var(--radius);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-full: var(--radius-full);
+
+  /* ===========================================================================
+   * SPACING — --spacing sets Tailwind's base multiplier (numeric p-*, gap-*,
+   * ... scale) to the 4px grid unit; named --spacing-* keys additionally
+   * expose the space-2xs…3xl steps and the shell's fixed layout dimensions
+   * as first-class utilities (p-xl, gap-sm, h-titlebar, w-sidebar, ...).
+   * ======================================================================== */
+  --spacing: var(--space-xs);
+
+  --spacing-2xs: var(--space-2xs);
+  --spacing-xs: var(--space-xs);
+  --spacing-sm: var(--space-sm);
+  --spacing-md: var(--space-md);
+  --spacing-lg: var(--space-lg);
+  --spacing-xl: var(--space-xl);
+  --spacing-2xl: var(--space-2xl);
+  --spacing-3xl: var(--space-3xl);
+
+  --spacing-titlebar: var(--layout-titlebar-h);
+  --spacing-statusbar: var(--layout-statusbar-h);
+  --spacing-sidebar: var(--layout-sidebar-w);
+  --spacing-inspector: var(--layout-inspector-w);
+  --spacing-row-compact: var(--layout-row-compact);
+  --spacing-row-regular: var(--layout-row-regular);
+
+  /* ===========================================================================
+   * SHADOW / MOTION
+   * ======================================================================== */
+  --shadow-popover: var(--shadow-popover);
+  /* --ring-focus is a full box-shadow value (offset + blur + color-mix),
+   * so it maps into Tailwind's --shadow-* namespace (shadow-focus) rather
+   * than --color-* — same treatment as --shadow-popover above. */
+  --shadow-focus: var(--ring-focus);
+  --ease-standard: var(--ease-standard);
+
+  /* ===========================================================================
+   * MOTION DURATION — Tailwind v4's duration-<name> utilities read this
+   * namespace directly.
+   * ======================================================================== */
+  --duration-fast: var(--duration-fast);
+  --duration-base: var(--duration-base);
+}
+
+/* =============================================================================
+ * NATIVE CONTROL CHROME
+ *
+ * The app has a single dark palette (`design/tokens.css` declares one `:root`,
+ * no light theme), but the document's `color-scheme` still defaulted to
+ * `normal` — so every widget the engine paints itself came out in its
+ * light-mode skin. On Windows/WebView2 that put **black** spinner arrows
+ * inside `input[type="number"]`, sitting on a near-black field; it also
+ * affects the native `<select>` popup and scrollbars.
+ *
+ * `color-scheme: dark` fixes those at the root. `NumberField` additionally
+ * hides the native spinner and draws its own chevrons, so the stepper matches
+ * `Select`'s chevron exactly instead of merely being the right brightness —
+ * and looks identical on macOS, where the native spinner only appears on
+ * hover, and on Windows, where it is always drawn.
+ * ========================================================================== */
+:root {
+  color-scheme: dark;
+}
+
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}

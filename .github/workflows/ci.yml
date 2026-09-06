@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    # windows-latest is required because:
+    # - Crate `windows` (Win32 interop for clipboard, hotkeys, etc) only compiles on Windows
+    # - Crate `keyring` (secure credential storage) uses platform-specific Windows APIs
+    # - Tauri build process requires native Windows development environment
+    # - This is a Windows-first desktop application (no need for cross-platform CI)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup Node.js for frontend (TypeScript, React, Vite)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # Setup Rust toolchain for src-tauri workspace
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      # Cache Rust compilation artifacts in src-tauri
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Frontend checks
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+
+      # T-6.3 audit MINOR #10: fail CI on known-vulnerable npm dependencies.
+      # --omit=dev keeps this signal on what actually ships; --audit-level=high
+      # avoids blocking merges on low/moderate advisories with no fix available.
+      - name: npm audit (high+ severity, production deps)
+        run: npm audit --omit=dev --audit-level=high
+
+      # Rust formatting check (all workspace members)
+      - run: cargo fmt --all --manifest-path src-tauri/Cargo.toml --check
+
+      # Rust linting (all targets, deny warnings)
+      - run: cargo clippy --workspace --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      # Rust tests (all workspace members)
+      - run: cargo test --workspace --manifest-path src-tauri/Cargo.toml
+
+      # T-6.3 audit MINOR #10: fail CI on known-vulnerable/yanked Rust crates.
+      # Ignore file (RUSTSEC advisories accepted as risk, with a reason each)
+      # lives at src-tauri/.cargo-audit-ignore if/when one is ever needed.
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: cargo audit
+        run: cargo audit --deny warnings --file src-tauri/Cargo.lock
+
+      # RNF-010: generated.ts must be committed in sync with Rust types.
+      # `cargo test` (previous step) regenerates src/types/generated/**.ts and
+      # the src/types/generated.ts barrel via ts-rs (T-1.4); a clean diff here
+      # proves the committed bindings match the Rust source of truth.
+      - name: Verify generated TS types are in sync (RNF-010)
+        run: git diff --exit-code -- src/types/
+
+      # RNF-009: Core package must not depend on Tauri
+      # This ensures osystems-sync-core remains a reusable library independent of the desktop app
+      - name: Verify core is tauri-free (RNF-009)
+        run: |
+          cargo tree -p osystems-sync-core -e normal --manifest-path src-tauri/Cargo.toml | grep -E '^[│├└─ ]*tauri(-[a-z-]+)? v' && exit 1 || echo "✓ core is tauri-free"
