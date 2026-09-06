@@ -11,6 +11,8 @@
     "test": "vitest run",
     "test:e2e:unit": "node --test tests/e2e/__tests__/*.test.mjs",
     "typecheck": "tsc --noEmit",
+    "version:sync": "node scripts/version.mjs",
+    "version:check": "node scripts/version.mjs --check",
     "lint": "eslint src",
     "longevity": "node tests/e2e/longevity.mjs",
     "longevity:report": "node tests/e2e/longevity.mjs --mode report",

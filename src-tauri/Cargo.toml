@@ -2,6 +2,11 @@
 members = [".", "crates/core"]
 resolver = "2"
 
+# Fonte da versão para os dois crates. NÃO editar à mão: é escrito por
+# `npm run version:sync` a partir do `VERSION` na raiz do repositório.
+[workspace.package]
+version = "0.2.0"
+
 # Release profile for the Windows installer build (T-6.4, `.github/workflows/release.yml`).
 # `opt-level = 3` (speed) over `"s"` (size): the app's hot paths are CPU-bound —
 # full-file SHA-256 hashing (SPEC.md §12 decision C5) and S3/Drive upload chunking —
@@ -17,7 +22,7 @@ strip = true
 
 [package]
 name = "osystems-sync"
-version = "0.2.0"
+version.workspace = true
 description = "oSystems Sync — Windows desktop agent for Google Drive & S3 sync"
 authors = ["oSystems"]
 edition = "2021"

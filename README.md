@@ -88,6 +88,24 @@ desenvolver a partir de um clone:
 O restante — `cargo test`, `npm run test`, build e execução — funciona num clone
 limpo.
 
+## Versão
+
+A versão vive em **`VERSION`**, na raiz — um único número, sem prefixo.
+
+```bash
+node scripts/version.mjs 0.3.0   # grava VERSION e propaga aos derivados
+npm run version:check            # falha se algum derivado divergir (roda no CI)
+```
+
+`package.json` e `[workspace.package]` (em `src-tauri/Cargo.toml`) são escritos
+pelo script. `crates/core` herda do workspace (`version.workspace = true`) e o
+instalador herda do `package.json` — `tauri.conf.json` traz
+`"version": "../package.json"`. Nenhum dos quatro é editado à mão.
+
+Um `v*` empurrado como tag dispara `.github/workflows/release.yml`, que **recusa
+publicar instalador sem assinatura de código** (gate VULN-002). Enquanto não
+houver certificado, o instalador sai do build local (`npm run build:win`).
+
 ## Autor
 
 **Paulo Souza**

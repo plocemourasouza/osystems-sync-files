@@ -40,6 +40,12 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # A versão vive em `VERSION`; `package.json` e `[workspace.package]` são
+      # derivados por `npm run version:sync`. Este passo falha se alguém subiu
+      # a versão à mão em um deles — que era exatamente como o número
+      # divergia antes de existir uma fonte única.
+      - run: npm run version:check
+
       # Frontend checks
       - run: npm ci
       - run: npm run typecheck

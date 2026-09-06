@@ -3,11 +3,28 @@
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 Versionamento [semântico](https://semver.org/lang/pt-BR/).
 
-A versão vive em quatro lugares e sobe junta: `package.json`,
-`src-tauri/Cargo.toml`, `src-tauri/crates/core/Cargo.toml` e
-`src-tauri/tauri.conf.json`.
+A versão vive em **`VERSION`**, na raiz. Para subir:
+
+```bash
+node scripts/version.mjs 0.3.0   # grava VERSION e propaga
+```
+
+`package.json` e `[workspace.package]` são escritos pelo script;
+`crates/core` herda do workspace e o instalador herda do `package.json`
+(`tauri.conf.json` aponta para ele). `npm run version:check` roda no CI e falha
+se algum divergir.
 
 ---
+
+## [Não lançado]
+
+### Interno
+
+- **Fonte única da versão.** O número vivia em quatro manifestos e subia à mão
+  nos quatro. Agora vive em `VERSION`: `scripts/version.mjs` escreve dois
+  derivados, os outros dois herdam sozinhos (Cargo workspace inheritance e o
+  fallback do `tauri.conf.json` para o `package.json`). `npm run version:check`
+  entra no CI para pegar divergência.
 
 ## [0.2.0] — 2026-09-06
 

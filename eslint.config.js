@@ -23,4 +23,16 @@ export default tseslint.config(
       "no-console": ["error", { allow: ["warn", "error"] }],
     },
   },
+  // Ferramentas de build rodam no Node, não no navegador: `console` e
+  // `process` são o ambiente, e imprimir é o propósito delas. Globais
+  // declarados à mão para não adicionar o pacote `globals` só por isso.
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { console: "readonly", process: "readonly" },
+    },
+    rules: {
+      "no-console": "off",
+    },
+  },
 );
