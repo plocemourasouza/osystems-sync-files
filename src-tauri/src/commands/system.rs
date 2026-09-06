@@ -47,6 +47,8 @@ pub enum AuthorLink {
     Facebook,
     Linkedin,
     Github,
+    Email,
+    Whatsapp,
 }
 
 impl AuthorLink {
@@ -56,6 +58,16 @@ impl AuthorLink {
             Self::Facebook => "https://www.facebook.com/plocemourasouza",
             Self::Linkedin => "https://www.linkedin.com/in/psouza/",
             Self::Github => "https://www.github.com/plocemourasouza",
+            // `mailto:` reaches the OS default mail client. The plugin's
+            // scope only gates its own `open_url` *command*; this Rust-side
+            // call is not scoped, so no capability entry is what makes this
+            // work — the closed enum is.
+            Self::Email => "mailto:plocemourasouza@gmail.com",
+            // `wa.me` is WhatsApp's own click-to-chat endpoint: it opens the
+            // desktop app when installed and WhatsApp Web otherwise, with the
+            // conversation already open. Digits only, country code first —
+            // +55 (Brazil) 55 (DDD) 99125-1975.
+            Self::Whatsapp => "https://wa.me/5555991251975",
         }
     }
 }
@@ -76,7 +88,7 @@ mod tests {
     // The addresses are the point of the enum: if they can drift silently,
     // owning them in Rust bought nothing.
     #[test]
-    fn every_link_is_an_https_url_on_its_own_domain() {
+    fn every_profile_is_an_https_url_on_its_own_domain() {
         for (link, domain) in [
             (AuthorLink::Instagram, "instagram.com"),
             (AuthorLink::Facebook, "facebook.com"),
@@ -90,5 +102,32 @@ mod tests {
                 "{link:?} must point at {domain}: {url}"
             );
         }
+    }
+
+    // The two non-profile contacts have their own shapes, and both are easy to
+    // get subtly wrong: a `mailto:` with a stray space, or a `wa.me` number
+    // carrying the `+`, parentheses or dash that WhatsApp rejects.
+    #[test]
+    fn email_is_a_bare_mailto() {
+        let url = AuthorLink::Email.url();
+
+        assert_eq!(url, "mailto:plocemourasouza@gmail.com");
+        assert!(!url.contains(char::is_whitespace));
+    }
+
+    #[test]
+    fn whatsapp_is_a_digits_only_click_to_chat_link() {
+        let url = AuthorLink::Whatsapp.url();
+        let number = url
+            .strip_prefix("https://wa.me/")
+            .expect("must be a wa.me click-to-chat link");
+
+        assert!(
+            number.chars().all(|c| c.is_ascii_digit()),
+            "wa.me rejects +, spaces, parentheses and dashes: {number}"
+        );
+        // Country code (55) + DDD (55) + 9-digit mobile.
+        assert_eq!(number.len(), 13, "unexpected length for {number}");
+        assert!(number.starts_with("55"), "must carry Brazil's country code");
     }
 }

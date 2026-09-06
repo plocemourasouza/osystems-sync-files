@@ -17,27 +17,49 @@
  * `title` tooltip and in the accessible name, so hovering or a screen reader
  * still gets `Instagram: @plocemourasouza`.
  */
-import type { JSX } from "react";
+import type { ComponentType, JSX } from "react";
 
 import { openAuthorLink } from "@/api/ipc";
 import { t } from "@/i18n";
 import type { AuthorLink } from "@/types/generated";
 
-import { FacebookIcon, GithubIcon, InstagramIcon, LinkedinIcon, type BrandIconProps } from "./BrandIcons";
+import { AtSign } from "lucide-react";
 
-type Profile = {
+import {
+  FacebookIcon,
+  GithubIcon,
+  InstagramIcon,
+  LinkedinIcon,
+  WhatsappIcon,
+  type BrandIconProps,
+} from "./BrandIcons";
+
+type Contact = {
   link: AuthorLink;
+  /** Names the destination in the accessible name and the tooltip. */
   network: string;
-  /** What the user sees — a handle for the two that have one, a URL otherwise. */
+  /** The handle, address or number behind the mark. */
   handle: string;
-  Icon: (props: BrandIconProps) => JSX.Element;
+  /**
+   * Any 24-grid mark that takes `size`: the hand-drawn brand icons and
+   * lucide's own components both satisfy this, and lucide's `forwardRef`
+   * result is a `ComponentType`, not a plain function.
+   */
+  Icon: ComponentType<BrandIconProps>;
 };
 
-const PROFILES: Profile[] = [
+/**
+ * Profiles first, then the two direct channels — mail and WhatsApp land at
+ * the right end of the row, where the eye finishes. `AtSign` comes from
+ * lucide; only the brand marks had to be hand-drawn.
+ */
+const CONTACTS: Contact[] = [
   { link: "instagram", network: "Instagram", handle: "@plocemourasouza", Icon: InstagramIcon },
   { link: "facebook", network: "Facebook", handle: "@plocemourasouza", Icon: FacebookIcon },
   { link: "linkedin", network: "LinkedIn", handle: "in/psouza", Icon: LinkedinIcon },
   { link: "github", network: "GitHub", handle: "plocemourasouza", Icon: GithubIcon },
+  { link: "email", network: "E-mail", handle: "plocemourasouza@gmail.com", Icon: AtSign },
+  { link: "whatsapp", network: "WhatsApp", handle: "(55) 9 9125-1975", Icon: WhatsappIcon },
 ];
 
 export function AuthorCard(): JSX.Element {
@@ -63,7 +85,7 @@ export function AuthorCard(): JSX.Element {
         that a `gap` would leave dead on the right.
       */}
       <ul className="mt-xs flex w-full flex-row items-center justify-between">
-        {PROFILES.map(({ link, network, handle, Icon }) => (
+        {CONTACTS.map(({ link, network, handle, Icon }) => (
           <li key={link}>
             <button
               type="button"

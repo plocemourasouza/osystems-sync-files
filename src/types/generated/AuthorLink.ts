@@ -12,4 +12,4 @@
  * profile, and this module owns the address. The capability allowlist in
  * `capabilities/default.json` is the second, independent gate.
  */
-export type AuthorLink = "instagram" | "facebook" | "linkedin" | "github";
+export type AuthorLink = "instagram" | "facebook" | "linkedin" | "github" | "email" | "whatsapp";

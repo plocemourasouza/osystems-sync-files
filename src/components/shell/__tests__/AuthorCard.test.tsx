@@ -32,7 +32,9 @@ describe("AuthorCard", () => {
     ["Facebook", "@plocemourasouza", "facebook"],
     ["LinkedIn", "in/psouza", "linkedin"],
     ["GitHub", "plocemourasouza", "github"],
-  ])("opens %s in the browser when its row is clicked", async (network, handle, link) => {
+    ["E-mail", "plocemourasouza@gmail.com", "email"],
+    ["WhatsApp", "(55) 9 9125-1975", "whatsapp"],
+  ])("opens %s when its mark is clicked", async (network, handle, link) => {
     const user = userEvent.setup();
     render(<AuthorCard />);
 
@@ -52,16 +54,29 @@ describe("AuthorCard", () => {
 
     expect(screen.queryByText("@plocemourasouza")).not.toBeInTheDocument();
     expect(screen.queryByText("in/psouza")).not.toBeInTheDocument();
+    expect(screen.queryByText("plocemourasouza@gmail.com")).not.toBeInTheDocument();
+    expect(screen.queryByText("(55) 9 9125-1975")).not.toBeInTheDocument();
 
     expect(
       screen.getByRole("button", { name: "Instagram: @plocemourasouza — abre no navegador" }),
     ).toBeInTheDocument();
   });
 
-  it("renders exactly the four profiles", () => {
+  it("renders exactly the six contacts", () => {
     render(<AuthorCard />);
 
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    expect(screen.getAllByRole("button")).toHaveLength(6);
+  });
+
+  // Order is deliberate: the four profiles, then the two direct channels at
+  // the right end of the row.
+  it("puts e-mail and WhatsApp last, left to right", () => {
+    render(<AuthorCard />);
+
+    const order = screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"));
+
+    expect(order[4]).toMatch(/^E-mail:/);
+    expect(order[5]).toMatch(/^WhatsApp:/);
   });
 
   // A brand mark carries no information a screen reader needs — the row's
@@ -70,7 +85,7 @@ describe("AuthorCard", () => {
     const { container } = render(<AuthorCard />);
 
     const icons = container.querySelectorAll("svg");
-    expect(icons).toHaveLength(4);
+    expect(icons).toHaveLength(6);
     for (const icon of icons) {
       expect(icon).toHaveAttribute("aria-hidden", "true");
     }

@@ -13,3 +13,15 @@ src-tauri/gen
 src-tauri/crates/core/bindings/
 dist-windows/
 chaves.md
+
+# Não publicados a pedido do autor.
+# assets/ e .specs/ são material de processo (mockups, ADRs, status).
+# .cargo/ e tests/ SÃO funcionais: .cargo/config.toml roteia TS_RS_EXPORT_DIR
+# (sem ele um clone gera os tipos ts-rs em bindings/ em vez de
+# src/types/generated), e tests/e2e/ é alvo de `npm run test:e2e:unit` e
+# `npm run longevity`. Ambos precisam ser restaurados para desenvolver a
+# partir de um clone limpo.
+assets/
+.specs/
+.cargo/
+tests/

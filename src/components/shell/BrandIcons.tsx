@@ -69,6 +69,27 @@ export function LinkedinIcon(props: BrandIconProps): JSX.Element {
   );
 }
 
+/**
+ * The chat bubble with a handset inside — WhatsApp's mark reduced to the two
+ * shapes that survive at 17px. The bubble is drawn tail-down-left like the
+ * original; the handset is a single stroke rather than the filled glyph,
+ * which turns to mush at this size.
+ */
+export function WhatsappIcon(props: BrandIconProps): JSX.Element {
+  return (
+    <Frame {...props}>
+      <path d="M21 11.5a8.5 8.5 0 0 1-12.5 7.5L3 21l2-5.5A8.5 8.5 0 1 1 21 11.5z" />
+      {/* Filled, not stroked: an outlined receiver this small collapses into
+          a squiggle — the solid shape is what still reads as a handset. */}
+      <path
+        fill="currentColor"
+        stroke="none"
+        d="M9.6 7.6c-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3.1 4.9 4.3 2.4 1 2.9.8 3.4.8.5 0 1.6-.7 1.9-1.3.2-.7.2-1.2.2-1.3-.1-.1-.3-.2-.5-.3l-1.9-.9c-.3-.1-.5-.2-.7.1l-.7.9c-.2.2-.3.3-.6.1-.3-.1-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.1-.3 0-.4.2-.6l.4-.5c.2-.2.2-.3.3-.5.1-.2 0-.4 0-.5z"
+      />
+    </Frame>
+  );
+}
+
 /** The cat silhouette: rounded body, ears, and the trailing tail. */
 export function GithubIcon(props: BrandIconProps): JSX.Element {
   return (

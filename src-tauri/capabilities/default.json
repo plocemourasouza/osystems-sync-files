@@ -43,6 +43,12 @@
         },
         {
           "url": "https://www.github.com/*"
+        },
+        {
+          "url": "https://wa.me/*"
+        },
+        {
+          "url": "mailto:*"
         }
       ]
     }
