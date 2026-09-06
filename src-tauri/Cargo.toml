@@ -17,7 +17,7 @@ strip = true
 
 [package]
 name = "osystems-sync"
-version = "0.1.0"
+version = "0.2.0"
 description = "oSystems Sync — Windows desktop agent for Google Drive & S3 sync"
 authors = ["oSystems"]
 edition = "2021"
