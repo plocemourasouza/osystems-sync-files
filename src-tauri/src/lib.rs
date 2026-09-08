@@ -130,6 +130,7 @@ pub fn run() {
                 let state = app_handle.state::<state::AppState>();
                 let runtime = state.runtime.clone();
                 runtime.cancel_health();
+                runtime.cancel_reconcile();
                 state.resume_cancel.cancel();
                 state.night_mode_cancel.cancel();
                 if let Some(pool) = state.pool.get().cloned() {

@@ -7,3 +7,4 @@ export { KpiRow } from "./KpiRow";
 export { DashboardHeader } from "./DashboardHeader";
 export { AuthRequiredBanner } from "./AuthRequiredBanner";
 export { EmptyStateNoCredentials } from "./EmptyStateNoCredentials";
+export { RescanFailedBanner } from "./RescanFailedBanner";

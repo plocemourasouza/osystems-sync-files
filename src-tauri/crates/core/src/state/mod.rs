@@ -11,7 +11,7 @@ mod repo;
 
 pub use model::{
     AppStatus, AuthRequired, Destination, DestinationHealth, DestinationsHealth, EventRow, FileRow,
-    JobRow, JobSide, JobStatus, JobView, ListJobsPage, ListJobsQuery, RecoveredJob, StatusCounts,
-    Throughput, UploadProgress, UpsertOutcome,
+    JobRow, JobSide, JobStatus, JobView, ListJobsPage, ListJobsQuery, RecoveredJob, RescanFailed,
+    RescanProgress, StatusCounts, Throughput, UploadProgress, UpsertOutcome,
 };
 pub use repo::{Repo, StateError};

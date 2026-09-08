@@ -25,6 +25,8 @@ function line(overrides: Partial<LogLine> = {}): LogLine {
     job_id: null,
     destination: null,
     message: "hi",
+    error: null,
+    path: null,
     ...overrides,
   };
 }

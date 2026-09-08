@@ -19,6 +19,8 @@ export type { ListJobsQuery } from "./generated/ListJobsQuery";
 export type { LogLine } from "./generated/LogLine";
 export type { NightModeConfig } from "./generated/NightModeConfig";
 export type { QosConfig } from "./generated/QosConfig";
+export type { RescanFailed } from "./generated/RescanFailed";
+export type { RescanProgress } from "./generated/RescanProgress";
 export type { RescanReport } from "./generated/RescanReport";
 export type { RetryConfig } from "./generated/RetryConfig";
 export type { S3Config } from "./generated/S3Config";

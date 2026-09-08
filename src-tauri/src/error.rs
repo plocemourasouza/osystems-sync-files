@@ -75,7 +75,17 @@ impl From<osystems_sync_core::queue::QueueError> for AppError {
 
 impl From<osystems_sync_core::rescan::RescanError> for AppError {
     fn from(err: osystems_sync_core::rescan::RescanError) -> Self {
-        AppError::new("rescan.error", err.to_string())
+        use osystems_sync_core::rescan::RescanError;
+        match err {
+            // PLAN.md T-2.5: a distinct code/message so the manual "Atualizar
+            // Lista" button can tell the user a scan is already running, instead
+            // of the generic `rescan.error` — which would look exactly like the
+            // silent-failure bug this guard exists to prevent.
+            RescanError::AlreadyInProgress => {
+                AppError::new("rescan.in_progress", "já existe uma varredura em andamento")
+            }
+            other => AppError::new("rescan.error", other.to_string()),
+        }
     }
 }
 

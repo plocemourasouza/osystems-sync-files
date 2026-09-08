@@ -85,9 +85,16 @@
       },
       "actions": {
         "rescan": "Atualizar Lista",
+        "rescanProgress": "Escaneando {scanned}/{total}…",
+        "rescanScanned": "{count} escaneados",
         "rescanQueued": "{count} enfileirados",
         "rescanArchived": "{count} removidos pelo filtro",
         "rescanRestored": "{count} recuperados",
+        "rescanErrors": "{count} erros",
+        "rescanSkippedUnreadable": "{count} pulados por permissão",
+        "rescanErrorTitle": "Falha ao atualizar a lista",
+        "rescanErrorUnknown": "Não foi possível atualizar a lista. Tente novamente.",
+        "rescanErrorDismiss": "Dispensar erro de atualização",
         "pause": "Pausar Watcher",
         "resume": "Retomar Watcher",
         "clearDone": "Limpar Concluídos",
@@ -193,6 +200,11 @@
         "settingsAriaLabel": "Navegar para Configurações para reautenticar {destination}",
         "dismiss": "Dispensar",
         "dismissAriaLabel": "Dispensar alerta de autenticação para {destination}"
+      },
+      "rescanFailedBanner": {
+        "title": "Falha ao verificar a pasta monitorada",
+        "dismiss": "Dispensar",
+        "dismissAriaLabel": "Dispensar alerta de falha na verificação da pasta"
       }
     },
     "settings": {

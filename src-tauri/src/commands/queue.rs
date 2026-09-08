@@ -85,19 +85,41 @@ pub async fn pick_folder(
 /// Returns the whole [`RescanReport`] rather than just the enqueued count: with the
 /// reconciliation pass a single number can no longer describe what happened, and the
 /// struct already crosses IPC with a generated TS type.
+///
+/// PLAN.md T-2.5: unlike every other rescan call site, this one does NOT go
+/// through `events::notify_rescan_failure` for
+/// `RescanError::AlreadyInProgress` — a background initiator can silently
+/// no-op on a skip, but this button is the user explicitly asking for a scan,
+/// so it must surface "já existe uma varredura em andamento" as the command's
+/// own error (`rescan.in_progress`, see `error.rs`) rather than either
+/// swallowing it or, worse, returning a `RescanReport` with `enqueued: 0` --
+/// which would be indistinguishable from the exact silent-failure bug this
+/// guard exists to prevent.
 #[tauri::command]
 pub async fn rescan(app: AppHandle, state: State<'_, AppState>) -> Result<RescanReport, AppError> {
     let watch = state.config.read().await.watch.clone();
 
-    let report = osystems_sync_core::rescan::rescan(
+    // Only the manual, button-triggered rescan reports progress: it is the
+    // one call site the UI shows a live scan indicator for (PLAN.md T-2.4) --
+    // boot/resume/tray rescans still go through the plain `rescan()`.
+    let progress_sink = crate::events::rescan_progress_sink(&app);
+    let report = osystems_sync_core::rescan::rescan_with_progress(
         state.repo.clone(),
         state.runtime.wakers(),
         &watch,
         &state.runtime.stabilize_config(),
+        &progress_sink,
     )
     .await
     .map_err(|err| {
-        tracing::warn!(error = %err, "varredura manual falhou");
+        if matches!(
+            err,
+            osystems_sync_core::rescan::RescanError::AlreadyInProgress
+        ) {
+            tracing::debug!("varredura manual: já existe uma varredura em andamento, ignorada");
+        } else {
+            tracing::warn!(error = %err, "varredura manual falhou");
+        }
         AppError::from(err)
     })?;
 
@@ -133,12 +155,14 @@ pub async fn pause_watcher(app: AppHandle, state: State<'_, AppState>) -> Result
 pub async fn resume_watcher(app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
     let watch = state.config.read().await.watch.clone();
 
+    // The watcher itself already resumed by this point (`SyncRuntime::resume` flips
+    // it back on before running the rescan) — only the reconciliation scan can still
+    // fail here, so a failure is surfaced via `rescan-failed` rather than failing the
+    // whole command: the toggle the user asked for did work, and `AppError`-ing this
+    // command would abort `DashboardHeader`'s `refresh()` right after, hiding that a
+    // real state change (watcher resumed) succeeded behind an error banner.
     if let Err(err) = state.runtime.resume(state.repo.clone(), watch).await {
-        // `NoPath` just means nothing is configured to rescan yet — not a real failure
-        // (mirrors `SyncRuntime::start`'s treatment of the same case).
-        if !matches!(err, osystems_sync_core::rescan::RescanError::NoPath) {
-            tracing::warn!(error = %err, "varredura do resume_watcher falhou");
-        }
+        crate::events::notify_rescan_failure(&app, "resume_watcher", err);
     }
 
     let status = state

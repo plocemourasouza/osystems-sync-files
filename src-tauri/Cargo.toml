@@ -51,11 +51,15 @@ tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tracing = "0.1"
-# `sync` only, for `tokio::sync::broadcast::error::RecvError` — the type returned by
-# `LoggingHandle::subscribe()` (core) that `events::should_forward` (T-2.7) matches on.
-# `osystems-sync-core` already pulls in `tokio` with `full`; this crate only needs to
-# *name* the one type, not run its own runtime (that's `tauri::async_runtime`'s job).
-tokio = { version = "1", default-features = false, features = ["sync"] }
+# `sync` para `tokio::sync::broadcast::error::RecvError` — o tipo devolvido por
+# `LoggingHandle::subscribe()` (core) que `events::should_forward` (T-2.7) casa.
+# Além de `sync`, o `runtime.rs` usa diretamente: `rt` (`task::JoinSet`, a concorrência
+# limitada do `run_intake_loop` — T-2.1), `time` (o `sleep` entre reconciliações do
+# `run_reconcile_loop` — T-2.2), `fs` (`fs::metadata` no pré-filtro, que antes era um
+# `std::fs::metadata` bloqueando o executor) e `macros` (`select!`). Estas features
+# vinham "de graça" pela unificação com o `tokio = full` do core; declará-las aqui é o
+# que impede uma mudança nas features do core de quebrar este crate sem aviso.
+tokio = { version = "1", default-features = false, features = ["sync", "rt", "time", "fs", "macros"] }
 # `CancellationToken` for `health::spawn`'s shutdown handle (T-3.9) — same version core
 # already resolves, so this doesn't add a second copy to the dependency tree.
 tokio-util = "0.7"
@@ -65,6 +69,11 @@ chrono = "0.4"
 
 [dev-dependencies]
 tempfile = "3"
+# `test-util` habilita o tempo virtual (`#[tokio::test(start_paused = true)]`) usado
+# pelos testes do `run_reconcile_loop` (T-2.2): um laço de 15 minutos só é testável de
+# forma determinística com o relógio sob controle do teste. Feature de teste apenas —
+# o resolver "2" a mantém fora de `cargo build --release`.
+tokio = { version = "1", features = ["test-util"] }
 # Re-declares the path dependency above with `test-support` enabled so this crate's own
 # tests can reach `osystems_sync_core::credentials::MemoryStore` (MINOR #7 / T-6.3
 # audit). Cargo's resolver "2" keeps this feature scoped to test/bench builds of this

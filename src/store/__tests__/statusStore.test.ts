@@ -31,7 +31,17 @@ const mockedPickFolder = vi.mocked(pickFolder);
 const initialState = useStatusStore.getState();
 
 function counts(overrides: Partial<StatusCounts> = {}): StatusCounts {
-  return { pending: 0, uploading: 0, paused: 0, cancelled: 0, done: 0, failed: 0, bytes_total: 0, bytes_done: 0, ...overrides };
+  return {
+    pending: 0,
+    uploading: 0,
+    paused: 0,
+    cancelled: 0,
+    done: 0,
+    failed: 0,
+    bytes_total: 0,
+    bytes_done: 0,
+    ...overrides,
+  };
 }
 
 function status(overrides: Partial<AppStatus> = {}): AppStatus {
@@ -102,6 +112,7 @@ describe("statusStore.actions", () => {
       unchanged: 1,
       skipped_filtered: 0,
       skipped_symlink: 0,
+      skipped_unreadable: 0,
       errors: 0,
       archived: 2,
       restored: 0,
@@ -113,6 +124,25 @@ describe("statusStore.actions", () => {
 
     expect(result).toEqual(report);
     expect(mockedGetStatus).toHaveBeenCalledTimes(1);
+  });
+
+  // The `rescan` command surfaces the real cause (RescanError::to_string(), e.g.
+  // an I/O permission error) as an AppError — the store must not swallow it, and
+  // must record it in `error` so it's the single source of truth even for a
+  // future caller that doesn't handle the rejection itself.
+  it("rescan() records the AppError message in `error` and rethrows, without refreshing", async () => {
+    mockedRescan.mockRejectedValueOnce({
+      code: "rescan.error",
+      message: "io error while scanning: Acesso negado. (os error 5)",
+    });
+
+    await expect(useStatusStore.getState().actions.rescan()).rejects.toEqual({
+      code: "rescan.error",
+      message: "io error while scanning: Acesso negado. (os error 5)",
+    });
+
+    expect(useStatusStore.getState().error).toBe("io error while scanning: Acesso negado. (os error 5)");
+    expect(mockedGetStatus).not.toHaveBeenCalled();
   });
 
   it("pauseWatcher() calls ipc.pauseWatcher() then refreshes", async () => {
@@ -137,7 +167,9 @@ describe("statusStore.actions", () => {
 
   it("pickFolder() reloads configStore and refreshes when a folder is picked", async () => {
     const load = vi.fn();
-    vi.mocked(useConfigStore.getState).mockReturnValue({ load } as unknown as ReturnType<typeof useConfigStore.getState>);
+    vi.mocked(useConfigStore.getState).mockReturnValue({ load } as unknown as ReturnType<
+      typeof useConfigStore.getState
+    >);
     mockedPickFolder.mockResolvedValueOnce("C:\\NovaPasta");
     mockedGetStatus.mockResolvedValueOnce(status());
 
@@ -150,7 +182,9 @@ describe("statusStore.actions", () => {
 
   it("pickFolder() does not reload configStore when the user cancels", async () => {
     const load = vi.fn();
-    vi.mocked(useConfigStore.getState).mockReturnValue({ load } as unknown as ReturnType<typeof useConfigStore.getState>);
+    vi.mocked(useConfigStore.getState).mockReturnValue({ load } as unknown as ReturnType<
+      typeof useConfigStore.getState
+    >);
     mockedPickFolder.mockResolvedValueOnce(null);
     mockedGetStatus.mockResolvedValueOnce(status());
 

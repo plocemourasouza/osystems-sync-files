@@ -500,7 +500,7 @@ Todos os tipos anotados com `#[derive(Serialize, Deserialize, TS)] #[ts(export)]
 | `job-updated` | `JobView` |
 | `upload-progress` | `{ job_id, sent, total, rate_bps }` (throttle 500 ms) |
 | `throughput` | `{ total_bps, gdrive_bps, s3_bps, limit_gdrive_bps?, limit_s3_bps? }` (1 s) |
-| `log-line` | `LogLine` `{ ts, level, target, job_id?, destination?, message }` |
+| `log-line` | `LogLine` `{ ts, level, target, job_id?, destination?, message, error?, path? }` |
 | `auth-required` | `{ destination, hint }` (`hint` = e-mail da SA para compartilhar / política IAM faltante) |
 
 Erros dos commands: retornar `Result<T, AppError>` onde `AppError { code: string, message: string }` serializável.

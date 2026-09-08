@@ -64,6 +64,7 @@ use osystems_sync_core::worker::{Throttles, Uploaders, WorkerDeps, WorkerPool};
 use tauri::async_runtime::{JoinHandle, Mutex, RwLock};
 use tauri::AppHandle;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::AppError;
@@ -74,6 +75,43 @@ const WATCH_DEBOUNCE: Duration = Duration::from_secs(2);
 /// Bounded so a pathological burst of filesystem events applies backpressure to the
 /// watcher's debouncer thread instead of growing an unbounded in-memory queue.
 const WATCH_CHANNEL_CAPACITY: usize = 1024;
+/// Quantas entradas de arquivo ([`run_intake_loop`]) rodam ao mesmo tempo (T-2.1).
+///
+/// Uma entrada é `wait_until_stable` (até 30 min de `StabilizeConfig::timeout`) seguida
+/// de um SHA-256 do arquivo inteiro (`queue::intake`). Sequencialmente, um único arquivo
+/// de 9,44 GB ainda sendo copiado segurava a *detecção* de tudo que viesse atrás dele —
+/// no campo, 20 arquivos desses de uma vez faziam o último levar horas para simplesmente
+/// aparecer na UI.
+///
+/// 4 e não mais: o gargalo real é disco (hash de arquivo inteiro), não CPU; passar disso
+/// só faz as cópias concorrentes disputarem o mesmo eixo e atrasarem todas. O limite
+/// também é o que impede o `JoinSet` de crescer sem controle atrás dos 1024 slots de
+/// [`WATCH_CHANNEL_CAPACITY`] — a contrapressão continua chegando ao `blocking_send` do
+/// watcher, como antes.
+const MAX_CONCURRENT_INTAKE: usize = 4;
+/// Intervalo da varredura de reconciliação periódica (T-2.2) — a rede de segurança
+/// contra perda silenciosa de eventos.
+///
+/// **Não remover como "otimização".** O `notify` 6.1.1 (versão fixada,
+/// `src-tauri/Cargo.lock`) *não tem como* reportar um estouro do buffer do
+/// `ReadDirectoryChangesW`:
+///
+/// - `notify-6.1.1/src/windows.rs`, `handle_event(error_code, _bytes_written, ...)`:
+///   `bytes_written` é ignorado (repare no `_`) e `error_code` só é comparado com
+///   `ERROR_OPERATION_ABORTED`. Um estouro se anuncia justamente por
+///   `bytes_returned == 0`; o backend lê um buffer vazio, rearma o watch e segue.
+/// - `notify::ErrorKind` tem seis variantes (`Generic`, `Io`, `PathNotFound`,
+///   `WatchNotFound`, `InvalidConfig`, `MaxFilesWatch`) — nenhuma de overflow.
+///
+/// Ou seja: numa cópia de 100 GB para um volume observado recursivamente, os eventos
+/// somem sem erro, sem callback e sem `Flag::Rescan`. Como a perda é indetectável por
+/// construção, a recuperação não pode ser reativa — só uma varredura periódica traz de
+/// volta o arquivo que caiu no buraco.
+///
+/// 15 minutos é o compromisso: teto aceitável para o usuário ver um arquivo aparecer no
+/// pior caso, e raro o bastante para o custo da varredura (que só re-hasheia o que mudou
+/// de tamanho/mtime — ver `rescan::rescan`) não competir com os uploads.
+const RECONCILE_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
 /// Owns the watcher/intake pipeline. Constructed once at boot ([`SyncRuntime::new`]),
 /// stored as `AppState.runtime: Arc<SyncRuntime>`, started from `lib.rs`'s `.setup()`.
@@ -101,6 +139,17 @@ pub struct SyncRuntime {
     /// `boot_workers` has run -- a plain `std::sync::Mutex` since every access is a
     /// same-thread set-or-cancel, never held across an `.await`.
     health_cancel: StdMutex<Option<CancellationToken>>,
+    /// A tarefa que roda [`run_reconcile_loop`] para a geração atual do watcher
+    /// (T-2.2). Vive junto com `watcher`/`intake_task`: é trocada inteira por
+    /// `spawn_watcher_and_intake`, e só existe enquanto há uma pasta observada
+    /// — sem `watch.path` não há o que reconciliar.
+    reconcile_task: Mutex<Option<JoinHandle<()>>>,
+    /// O [`CancellationToken`] da tarefa acima. Cancelado em dois pontos: na troca
+    /// de geração do watcher (encerra o laço antigo antes de subir o novo) e em
+    /// [`SyncRuntime::cancel_reconcile`] (`RunEvent::ExitRequested`). `std::sync::Mutex`
+    /// pelo mesmo motivo de `health_cancel`: só é definido ou clonado, nunca mantido
+    /// através de um `.await`.
+    reconcile_cancel: StdMutex<Option<CancellationToken>>,
 }
 
 /// Decides whether `OSYSTEMS_SYNC_S3_ENDPOINT` may override the S3 endpoint
@@ -146,6 +195,8 @@ impl SyncRuntime {
             stabilize: StdMutex::new(StabilizeConfig::default()),
             health,
             health_cancel: StdMutex::new(None),
+            reconcile_task: Mutex::new(None),
+            reconcile_cancel: StdMutex::new(None),
         }
     }
 
@@ -176,7 +227,7 @@ impl SyncRuntime {
                 )
                 .await
                 {
-                    tracing::warn!(error = %err, "varredura de inicialização falhou");
+                    events::notify_rescan_failure(&app, "boot", err);
                 }
             }
 
@@ -294,6 +345,13 @@ impl SyncRuntime {
         if let Some(old_task) = self.intake_task.lock().await.take() {
             old_task.abort();
         }
+        // A reconciliação da geração anterior aponta para o `watch` antigo: cancela
+        // (encerra o laço no próximo `select!`, abortando inclusive uma varredura em
+        // andamento) e aborta (cobre o caso de ele estar dormindo entre ticks).
+        self.cancel_reconcile();
+        if let Some(old_task) = self.reconcile_task.lock().await.take() {
+            old_task.abort();
+        }
 
         // Stored before the `points_at_dir` bail below: a user who sets
         // "seconds of stabilization" *before* picking a folder must still get
@@ -333,6 +391,9 @@ impl SyncRuntime {
         let wakers = self.wakers.clone();
         let app_for_cb = app.clone();
         let repo_for_cb = repo.clone();
+        let app_for_reconcile = app.clone();
+        let repo_for_reconcile = repo.clone();
+        let watch_for_reconcile = watch.clone();
 
         let join = tauri::async_runtime::spawn(run_intake_loop(
             rx,
@@ -356,6 +417,41 @@ impl SyncRuntime {
             },
         ));
         *self.intake_task.lock().await = Some(join);
+
+        // Rede de segurança contra a perda silenciosa de eventos do `notify` — ver
+        // [`RECONCILE_INTERVAL`] para por que ela não pode ser reativa.
+        let cancel = CancellationToken::new();
+        *self
+            .reconcile_cancel
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(cancel.clone());
+
+        let paused_probe = self.clone();
+        let reconcile_runtime = self.clone();
+        let reconcile_join = tauri::async_runtime::spawn(run_reconcile_loop(
+            RECONCILE_INTERVAL,
+            cancel,
+            move || paused_probe.is_paused(),
+            move || {
+                let runtime = reconcile_runtime.clone();
+                let app = app_for_reconcile.clone();
+                let repo = repo_for_reconcile.clone();
+                let watch = watch_for_reconcile.clone();
+                async move {
+                    match rescan::rescan(repo, &runtime.wakers, &watch, &runtime.stabilize_config())
+                        .await
+                    {
+                        Ok(report) => tracing::info!(
+                            scanned = report.scanned,
+                            enqueued = report.enqueued,
+                            "reconciliação periódica concluída"
+                        ),
+                        Err(err) => events::notify_rescan_failure(&app, "reconcile", err),
+                    }
+                }
+            },
+        ));
+        *self.reconcile_task.lock().await = Some(reconcile_join);
     }
 
     /// Read-only access to the health monitor once [`SyncRuntime::boot_workers`] has
@@ -377,6 +473,21 @@ impl SyncRuntime {
     pub fn cancel_health(&self) {
         let guard = self
             .health_cancel
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(cancel) = guard.as_ref() {
+            cancel.cancel();
+        }
+    }
+
+    /// Encerra o laço de reconciliação periódica (T-2.2) — par de
+    /// [`Self::cancel_health`] no `RunEvent::ExitRequested` do `lib.rs`, e também
+    /// usado por `spawn_watcher_and_intake` para derrubar a geração anterior.
+    /// No-op se nenhum watcher chegou a subir; idempotente
+    /// ([`CancellationToken::cancel`] é).
+    pub fn cancel_reconcile(&self) {
+        let guard = self
+            .reconcile_cancel
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(cancel) = guard.as_ref() {
@@ -697,7 +808,7 @@ impl ResumeSink for ResumeDetectorSink {
                     enqueued = report.enqueued,
                     "varredura de retomada concluída"
                 ),
-                Err(err) => tracing::warn!(error = %err, "varredura de retomada falhou"),
+                Err(err) => events::notify_rescan_failure(&app, "resume-from-sleep", err),
             }
 
             match runtime.build_app_status(&repo).await {
@@ -818,8 +929,35 @@ async fn emit_job_and_status_after_intake(
 /// before paying for `wait_until_stable`'s polling loop), then `wait_until_stable`, then
 /// the filters are re-checked against the *stabilized* size (the authoritative check —
 /// SPEC.md §2's `stabilize() → ...` step), then `intake`. Every error (stat, stabilize,
-/// intake) is `tracing::warn!`-logged and the loop continues with the next path — one
+/// intake) is `tracing::warn!`-logged and processing continues with the next path — one
 /// bad file must never take down the whole pipeline.
+///
+/// # Concorrência (T-2.1)
+///
+/// O laço recebe sequencialmente, mas *processa* até [`MAX_CONCURRENT_INTAKE`] caminhos
+/// ao mesmo tempo, num [`JoinSet`]. Sem isso, um único arquivo grande ainda sendo
+/// copiado prendia o laço em `wait_until_stable` (até 30 min de timeout) e depois no
+/// SHA-256 do arquivo inteiro, enquanto todo o resto esperava a vez — no campo, 20
+/// arquivos de 9,44 GB copiados de uma vez faziam o último levar horas para aparecer.
+///
+/// Consequências que valem estar escritas:
+///
+/// - **Ordem.** Os jobs continuam sendo reclamados em FIFO por `jobs.created_at`
+///   (`state/repo.rs`), mas `created_at` passa a refletir a ordem de *conclusão* do
+///   hash, não a de detecção: um arquivo pequeno detectado depois de um grande é
+///   enfileirado antes dele. É exatamente o comportamento desejado, e nenhum invariante
+///   depende de "detectado antes ⇒ enfileirado antes".
+/// - **Duplicatas.** Dois eventos para o mesmo caminho podem ser hasheados em paralelo
+///   (desperdício, não corrupção): `Repo::upsert_file_and_enqueue` roda dentro de uma
+///   transação, e todo acesso passa pelo mesmo `Arc<Mutex<Repo>>`, então o segundo vê o
+///   primeiro e resolve como `Unchanged`. `files.path` é UNIQUE.
+/// - **Cancelamento.** `intake_task.abort()` (troca de geração do watcher) descarta este
+///   future, o que dropa o `JoinSet` — e o `Drop` do `JoinSet` aborta todas as tarefas
+///   filhas. Não sobra entrada de arquivo órfã da geração anterior.
+/// - **Contrapressão.** O limite de tarefas em voo é o que mantém a contrapressão
+///   chegando ao `tx.blocking_send` do watcher através dos
+///   [`WATCH_CHANNEL_CAPACITY`] slots do canal, em vez de virar crescimento ilimitado
+///   de tarefas.
 pub async fn run_intake_loop<F>(
     mut rx: mpsc::Receiver<PathBuf>,
     repo: Arc<StdMutex<Repo>>,
@@ -847,38 +985,144 @@ pub async fn run_intake_loop<F>(
         None => PathBuf::new(),
     };
 
-    while let Some(path) = rx.recv().await {
-        let quick_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        if !queue::passes_filters(&path, quick_size, &watch) {
-            continue;
+    let root = Arc::new(root);
+    let watch = Arc::new(watch);
+    let on_intake = Arc::new(on_intake);
+    let mut in_flight: JoinSet<()> = JoinSet::new();
+
+    loop {
+        // Só recebe um novo caminho quando há vaga. Tarefas que terminaram enquanto
+        // este laço estava parado no `recv()` ainda contam em `len()` até serem
+        // colhidas aqui — colher é imediato, elas já resolveram.
+        while in_flight.len() >= MAX_CONCURRENT_INTAKE {
+            let _ = in_flight.join_next().await;
         }
 
-        let stable = match stabilize::wait_until_stable(&path, &stabilize).await {
-            Ok(stable) => stable,
-            Err(err) => {
-                tracing::warn!(path = %path.display(), error = %err, "estabilização falhou, ignorando arquivo");
-                continue;
-            }
-        };
+        let Some(path) = rx.recv().await else { break };
 
-        if !queue::passes_filters(&path, stable.size, &watch) {
-            continue;
-        }
-
-        match queue::intake(
+        in_flight.spawn(process_one_path(
+            path,
             repo.clone(),
-            &wakers,
-            &root,
-            path.clone(),
-            stable.size,
-            stable.mtime,
-        )
-        .await
-        {
-            Ok(outcome) => on_intake(outcome),
-            Err(err) => {
-                tracing::warn!(path = %path.display(), error = %err, "entrada de arquivo falhou, ignorando arquivo")
-            }
+            wakers.clone(),
+            watch.clone(),
+            root.clone(),
+            stabilize,
+            on_intake.clone(),
+        ));
+    }
+
+    // O canal fechou (watcher parado): drena o que ainda está em voo em vez de
+    // devolver e deixar o `Drop` do `JoinSet` abortar entradas quase prontas.
+    while in_flight.join_next().await.is_some() {}
+}
+
+/// Uma passagem completa de `stat → stabilize → filtros → intake` para um caminho,
+/// extraída de [`run_intake_loop`] para virar a unidade de trabalho do [`JoinSet`].
+/// Nunca propaga erro: toda falha é logada e a tarefa termina — um arquivo ruim não
+/// pode derrubar o pipeline nem as outras entradas em voo.
+async fn process_one_path<F>(
+    path: PathBuf,
+    repo: Arc<StdMutex<Repo>>,
+    wakers: Arc<Wakers>,
+    watch: Arc<WatchConfig>,
+    root: Arc<PathBuf>,
+    stabilize: StabilizeConfig,
+    on_intake: Arc<F>,
+) where
+    F: Fn(IntakeOutcome) + Send + Sync + 'static,
+{
+    // `tokio::fs::metadata` e não `std::fs::metadata`: este `stat` roda dentro do
+    // executor async e, numa pasta de rede ou num disco ocupado com 20 cópias
+    // simultâneas, bloqueia a thread do runtime inteira. O `0` no erro preserva o
+    // comportamento anterior — um arquivo que sumiu entre o evento e o pré-filtro é
+    // reprovado pelo filtro de tamanho ou morre logo depois em `wait_until_stable`.
+    let quick_size = match tokio::fs::metadata(&path).await {
+        Ok(meta) => meta.len(),
+        Err(err) => {
+            tracing::debug!(path = %path.display(), error = %err, "pré-filtro: metadados indisponíveis, assumindo tamanho 0");
+            0
+        }
+    };
+    if !queue::passes_filters(&path, quick_size, &watch) {
+        return;
+    }
+
+    let stable = match stabilize::wait_until_stable(&path, &stabilize).await {
+        Ok(stable) => stable,
+        Err(err) => {
+            tracing::warn!(path = %path.display(), error = %err, "estabilização falhou, ignorando arquivo");
+            return;
+        }
+    };
+
+    if !queue::passes_filters(&path, stable.size, &watch) {
+        return;
+    }
+
+    match queue::intake(
+        repo,
+        &wakers,
+        &root,
+        path.clone(),
+        stable.size,
+        stable.mtime,
+    )
+    .await
+    {
+        Ok(outcome) => on_intake(outcome),
+        Err(err) => {
+            tracing::warn!(path = %path.display(), error = %err, "entrada de arquivo falhou, ignorando arquivo")
+        }
+    }
+}
+
+/// O laço da varredura de reconciliação periódica (T-2.2), separado de [`SyncRuntime`]
+/// pelo mesmo motivo de [`run_intake_loop`]: assim é testável sem Tauri, sem watcher e
+/// sem esperar 15 minutos — os testes passam um `interval` curto e uma ação falsa.
+///
+/// Semântica:
+///
+/// - o intervalo é medido **depois** de cada varredura, não a partir de um relógio fixo
+///   (`sleep(interval)` e não [`tokio::time::interval`]). É o que garante, por
+///   construção, que duas reconciliações nunca se sobreponham *e* que os ticks perdidos
+///   durante uma varredura longa não virem uma rajada de varreduras logo em seguida —
+///   nenhuma variante de `MissedTickBehavior` dá essa garantia: `Burst`, `Delay` e
+///   `Skip` disparam imediatamente o primeiro tick já vencido. Uma varredura de 100 GB
+///   leva minutos; empilhar varreduras transformaria a rede de segurança no problema;
+/// - a primeira reconciliação acontece um `interval` *depois* do watcher subir — o boot
+///   já faz sua própria varredura em [`SyncRuntime::start`];
+/// - `is_paused` verdadeiro pula o ciclo por inteiro — pausar é uma decisão do usuário, e
+///   varrer um volume contraria isso tanto quanto processar eventos;
+/// - `cancel` encerra o laço mesmo no meio de uma varredura (o `select!` interno) —
+///   uma varredura de volume inteiro não pode segurar o encerramento do app por minutos.
+///   Abandonar `rescan()` na metade é seguro: ela é idempotente e cada escrita já foi
+///   confirmada individualmente.
+async fn run_reconcile_loop<P, A, Fut>(
+    interval: Duration,
+    cancel: CancellationToken,
+    is_paused: P,
+    on_tick: A,
+) where
+    P: Fn() -> bool,
+    A: Fn() -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    loop {
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => break,
+            _ = tokio::time::sleep(interval) => {}
+        }
+
+        if is_paused() {
+            tracing::debug!("reconciliação periódica pulada: watcher pausado");
+            continue;
+        }
+
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => break,
+            _ = on_tick() => {}
         }
     }
 }
@@ -902,6 +1146,25 @@ mod tests {
             stable_reads: 1,
             interval: Duration::from_millis(5),
             timeout: Duration::from_secs(5),
+        }
+    }
+
+    /// Exige ~90 ms de silêncio antes de considerar um arquivo estável. É o que
+    /// permite simular a cópia de 9,44 GB do campo sem escrever 9,44 GB: um
+    /// arquivo que continua crescendo nunca consegue 3 leituras iguais seguidas,
+    /// então `wait_until_stable` fica preso nele enquanto o writer estiver ativo.
+    fn polling_stabilize() -> StabilizeConfig {
+        StabilizeConfig {
+            stable_reads: 3,
+            interval: Duration::from_millis(30),
+            timeout: Duration::from_secs(30),
+        }
+    }
+
+    fn watch_for(dir: &std::path::Path) -> WatchConfig {
+        WatchConfig {
+            path: Some(dir.to_string_lossy().into_owned()),
+            ..WatchConfig::default()
         }
     }
 
@@ -1002,6 +1265,306 @@ mod tests {
             .await
             .expect("status_counts");
         assert_eq!(counts.pending, 0);
+    }
+
+    /// T-2.1 — o motivo de existir a concorrência limitada. Um arquivo que
+    /// demora a estabilizar (no campo: 9,44 GB ainda sendo copiados, com
+    /// `StabilizeConfig::timeout` de 30 min) não pode segurar a detecção de tudo
+    /// que vier atrás dele. Com o laço sequencial anterior a ordem seria
+    /// `[slow, fast]`; com o `JoinSet` limitado, o arquivo pequeno estabiliza,
+    /// hasheia e entra na fila enquanto o grande ainda está sendo escrito.
+    #[tokio::test]
+    async fn run_intake_loop_lets_a_later_file_be_enqueued_before_a_slow_one() {
+        const FAST_BODY: &[u8] = b"fast content";
+
+        let dir = tempdir().expect("tempdir");
+        let slow_path = dir.path().join("slow.bin");
+        std::fs::write(&slow_path, b"seed").expect("write slow.bin");
+        let fast_path = dir.path().join("fast.pdf");
+        std::fs::write(&fast_path, FAST_BODY).expect("write fast.pdf");
+
+        // Mantém `slow.bin` crescendo por ~600 ms (30 × 20 ms). Com
+        // `polling_stabilize()` lendo a cada 30 ms, nunca há 3 leituras iguais
+        // seguidas enquanto este laço estiver rodando.
+        let grower = {
+            let slow_path = slow_path.clone();
+            tokio::spawn(async move {
+                for _ in 0..30 {
+                    let mut file = std::fs::OpenOptions::new()
+                        .append(true)
+                        .open(&slow_path)
+                        .expect("append to slow.bin");
+                    file.write_all(b"0123456789").expect("grow slow.bin");
+                    drop(file);
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+        };
+
+        let repo = shared_repo();
+        let wakers = Arc::new(Wakers::new());
+        let (tx, rx) = mpsc::channel::<PathBuf>(8);
+
+        // `IntakeOutcome` não carrega o caminho, mas carrega o tamanho — e os
+        // dois arquivos têm tamanhos distintos por construção (12 vs 304 bytes),
+        // então o tamanho identifica quem chegou primeiro.
+        let order = Arc::new(StdMutex::new(Vec::<u64>::new()));
+        let order_cb = order.clone();
+
+        let loop_handle = tokio::spawn(run_intake_loop(
+            rx,
+            repo.clone(),
+            wakers,
+            watch_for(dir.path()),
+            polling_stabilize(),
+            move |outcome: IntakeOutcome| {
+                order_cb
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(outcome.size);
+            },
+        ));
+
+        tx.send(slow_path).await.expect("send slow path");
+        tx.send(fast_path).await.expect("send fast path");
+        drop(tx);
+
+        tokio::time::timeout(Duration::from_secs(30), loop_handle)
+            .await
+            .expect("run_intake_loop should finish once rx closes")
+            .expect("run_intake_loop task should not panic");
+        grower.await.expect("grower task should not panic");
+
+        let order = order
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        assert_eq!(order.len(), 2, "os dois arquivos entram na fila");
+        assert_eq!(
+            order[0],
+            FAST_BODY.len() as u64,
+            "o arquivo pequeno não pode esperar o grande estabilizar (ordem observada: {order:?})"
+        );
+    }
+
+    /// T-2.1 — a concorrência é limitada, mas nada se perde: mais caminhos que
+    /// `MAX_CONCURRENT_INTAKE` ainda resultam em uma entrada por arquivo, e o
+    /// laço só termina depois de drenar o `JoinSet`.
+    #[tokio::test]
+    async fn run_intake_loop_enqueues_every_path_beyond_the_concurrency_limit() {
+        const FILES: usize = 12;
+
+        let dir = tempdir().expect("tempdir");
+        let mut paths = Vec::with_capacity(FILES);
+        for i in 0..FILES {
+            let path = dir.path().join(format!("report-{i}.pdf"));
+            std::fs::write(&path, format!("conteúdo {i}").as_bytes()).expect("write report");
+            paths.push(path);
+        }
+
+        let repo = shared_repo();
+        let wakers = Arc::new(Wakers::new());
+        let (tx, rx) = mpsc::channel::<PathBuf>(FILES);
+
+        let calls = Arc::new(AtomicU32::new(0));
+        let calls_cb = calls.clone();
+
+        let loop_handle = tokio::spawn(run_intake_loop(
+            rx,
+            repo.clone(),
+            wakers,
+            watch_for(dir.path()),
+            fast_stabilize(),
+            move |_outcome: IntakeOutcome| {
+                calls_cb.fetch_add(1, Ordering::SeqCst);
+            },
+        ));
+
+        for path in paths {
+            tx.send(path).await.expect("send path");
+        }
+        drop(tx);
+
+        tokio::time::timeout(Duration::from_secs(30), loop_handle)
+            .await
+            .expect("run_intake_loop should finish once rx closes")
+            .expect("run_intake_loop task should not panic");
+
+        assert_eq!(calls.load(Ordering::SeqCst), FILES as u32);
+        let counts = queue::with_repo(repo, |r| r.status_counts())
+            .await
+            .expect("status_counts");
+        assert_eq!(
+            counts.pending,
+            (FILES * 2) as i64,
+            "um job por destino para cada arquivo"
+        );
+    }
+
+    /// T-2.2 — o laço da reconciliação dispara a cada `interval` e encerra no
+    /// cancelamento. Tempo virtual (`start_paused`) para ser determinístico.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_loop_ticks_on_the_interval_until_cancelled() {
+        let cancel = CancellationToken::new();
+        let runs = Arc::new(AtomicU32::new(0));
+        let runs_cb = runs.clone();
+
+        let handle = tokio::spawn(run_reconcile_loop(
+            Duration::from_millis(100),
+            cancel.clone(),
+            || false,
+            move || {
+                let runs = runs_cb.clone();
+                async move {
+                    runs.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+        ));
+
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(1), handle)
+            .await
+            .expect("o laço deve encerrar logo após o cancelamento")
+            .expect("run_reconcile_loop task should not panic");
+
+        assert_eq!(
+            runs.load(Ordering::SeqCst),
+            3,
+            "varreduras em 100/200/300 ms; a primeira só um `interval` após subir"
+        );
+    }
+
+    /// T-2.2 — com o watcher pausado a reconciliação não roda: pausar é uma
+    /// decisão do usuário e uma varredura de volume inteiro contraria isso tanto
+    /// quanto processar eventos.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_loop_skips_ticks_while_paused() {
+        let cancel = CancellationToken::new();
+        let runs = Arc::new(AtomicU32::new(0));
+        let runs_cb = runs.clone();
+
+        let handle = tokio::spawn(run_reconcile_loop(
+            Duration::from_millis(100),
+            cancel.clone(),
+            || true,
+            move || {
+                let runs = runs_cb.clone();
+                async move {
+                    runs.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+        ));
+
+        tokio::time::sleep(Duration::from_millis(550)).await;
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(1), handle)
+            .await
+            .expect("o laço deve encerrar logo após o cancelamento")
+            .expect("run_reconcile_loop task should not panic");
+
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
+    }
+
+    /// T-2.2 — duas reconciliações nunca se sobrepõem e os ticks perdidos
+    /// durante uma varredura longa não viram uma rajada de varreduras logo em
+    /// seguida: o intervalo é medido a partir do *fim* da varredura anterior.
+    /// Uma varredura de 100 GB leva minutos; empilhar varreduras transformaria
+    /// a rede de segurança no problema.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_loop_never_overlaps_or_bursts_after_a_long_scan() {
+        let cancel = CancellationToken::new();
+        let in_flight = Arc::new(AtomicU32::new(0));
+        let max_in_flight = Arc::new(AtomicU32::new(0));
+        let marks = Arc::new(StdMutex::new(Vec::<(Duration, Duration)>::new()));
+
+        let start = tokio::time::Instant::now();
+        let in_flight_cb = in_flight.clone();
+        let max_cb = max_in_flight.clone();
+        let marks_cb = marks.clone();
+
+        let handle = tokio::spawn(run_reconcile_loop(
+            Duration::from_millis(100),
+            cancel.clone(),
+            || false,
+            move || {
+                let in_flight = in_flight_cb.clone();
+                let max = max_cb.clone();
+                let marks = marks_cb.clone();
+                async move {
+                    let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                    max.fetch_max(now, Ordering::SeqCst);
+                    let began = start.elapsed();
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    in_flight.fetch_sub(1, Ordering::SeqCst);
+                    marks
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .push((began, start.elapsed()));
+                }
+            },
+        ));
+
+        tokio::time::sleep(Duration::from_millis(1_250)).await;
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(1), handle)
+            .await
+            .expect("o laço deve encerrar logo após o cancelamento")
+            .expect("run_reconcile_loop task should not panic");
+
+        assert_eq!(
+            max_in_flight.load(Ordering::SeqCst),
+            1,
+            "nunca duas reconciliações ao mesmo tempo"
+        );
+
+        let marks = marks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        assert_eq!(
+            marks.len(),
+            2,
+            "varreduras concluídas em ~1,25 s: {marks:?}"
+        );
+        let (_, first_end) = marks[0];
+        let (second_begin, _) = marks[1];
+        assert!(
+            second_begin.saturating_sub(first_end) >= Duration::from_millis(100),
+            "os ticks perdidos não podem virar rajada: {marks:?}"
+        );
+    }
+
+    /// T-2.2 — cancelar durante uma varredura em andamento encerra o laço na
+    /// hora, sem esperar a varredura terminar (uma varredura de volume inteiro
+    /// travaria o encerramento por minutos).
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_loop_stops_mid_scan_on_cancellation() {
+        let cancel = CancellationToken::new();
+        let finished = Arc::new(AtomicU32::new(0));
+        let finished_cb = finished.clone();
+
+        let handle = tokio::spawn(run_reconcile_loop(
+            Duration::from_millis(100),
+            cancel.clone(),
+            || false,
+            move || {
+                let finished = finished_cb.clone();
+                async move {
+                    tokio::time::sleep(Duration::from_secs(600)).await;
+                    finished.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+        ));
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(1), handle)
+            .await
+            .expect("o cancelamento não pode esperar a varredura terminar")
+            .expect("run_reconcile_loop task should not panic");
+
+        assert_eq!(finished.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

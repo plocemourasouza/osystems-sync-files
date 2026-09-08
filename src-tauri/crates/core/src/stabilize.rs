@@ -100,6 +100,109 @@ pub enum StabilizeError {
     },
 }
 
+/// Classifies the raw OS error behind a failed [`try_open_exclusive`] attempt, when the
+/// underlying `io::Error` carries a raw OS code we recognize. All three known codes mean
+/// "someone else still has a handle on this file" (writer, antivirus scanner, cloud-sync
+/// agent), but distinguishing them makes the log line actionable instead of a generic
+/// "sharing violation".
+///
+/// `raw_os_error()` is a plain integer accessor, not a Windows API call, so classification is
+/// exercised on every platform in tests even though the codes below only ever occur for real
+/// on Windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LockErrorKind {
+    /// `ERROR_ACCESS_DENIED` (5).
+    AccessDenied,
+    /// `ERROR_SHARING_VIOLATION` (32) — the textbook "someone else has this file open" code.
+    SharingViolation,
+    /// `ERROR_LOCK_VIOLATION` (33) — a byte-range lock, not a whole-file share, is held.
+    LockViolation,
+    /// Anything else, carrying the raw code when the `io::Error` had one.
+    Other(Option<i32>),
+}
+
+impl LockErrorKind {
+    fn classify(err: &std::io::Error) -> Self {
+        match err.raw_os_error() {
+            Some(5) => Self::AccessDenied,
+            Some(32) => Self::SharingViolation,
+            Some(33) => Self::LockViolation,
+            other => Self::Other(other),
+        }
+    }
+
+    /// Human-readable description for the log line (Portuguese, matching this module's log
+    /// message convention).
+    fn describe(self) -> String {
+        match self {
+            Self::AccessDenied => "acesso negado (ERROR_ACCESS_DENIED/5)".to_string(),
+            Self::SharingViolation => {
+                "violação de compartilhamento (ERROR_SHARING_VIOLATION/32)".to_string()
+            }
+            Self::LockViolation => "violação de trava (ERROR_LOCK_VIOLATION/33)".to_string(),
+            Self::Other(Some(code)) => format!("erro do SO não classificado (código {code})"),
+            Self::Other(None) => "erro sem código de SO associado".to_string(),
+        }
+    }
+}
+
+/// Minimum time between repeated log lines for the *same* classified lock error, so a file
+/// held open for the whole 30-minute timeout produces a couple dozen lines instead of one per
+/// poll (with a 1 s poll interval that would be ~1800 lines — the same flood problem the
+/// `s3:DeleteObject` probe warning already had to be throttled for).
+const LOCK_LOG_REPEAT_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Tracks the last exclusive-open failure that was actually logged, so
+/// [`log_lock_wait`] knows whether the next one is new information or noise.
+struct LockWaitState {
+    kind: LockErrorKind,
+    error_text: String,
+    logged_at: tokio::time::Instant,
+}
+
+/// Logs a failed exclusive-open attempt, throttled: the first occurrence always logs; a
+/// change in the classified error kind always logs (useful signal on its own — e.g. an AV
+/// scanner released the file and a different process picked it up); otherwise the same kind
+/// logs again only every [`LOCK_LOG_REPEAT_INTERVAL`].
+fn log_lock_wait(path: &Path, error: &std::io::Error, state: &mut Option<LockWaitState>) {
+    let kind = LockErrorKind::classify(error);
+    let now = tokio::time::Instant::now();
+
+    let should_log = match state {
+        None => true,
+        Some(previous) => {
+            previous.kind != kind
+                || now.duration_since(previous.logged_at) >= LOCK_LOG_REPEAT_INTERVAL
+        }
+    };
+
+    if should_log {
+        tracing::warn!(
+            path = %path.display(),
+            error = %error,
+            "wait_until_stable: abertura exclusiva falhou ({}) — arquivo ainda em uso, aguardando liberação",
+            kind.describe(),
+        );
+    }
+
+    match state {
+        Some(previous) if !should_log => {
+            // Not logged this time (throttled): still track the latest kind/text so a
+            // subsequent timeout reports the freshest observation, but don't reset the clock
+            // that governs the next allowed log line.
+            previous.kind = kind;
+            previous.error_text = error.to_string();
+        }
+        _ => {
+            *state = Some(LockWaitState {
+                kind,
+                error_text: error.to_string(),
+                logged_at: now,
+            });
+        }
+    }
+}
+
 /// Waits until `path` stops changing and is not held open exclusively by another process.
 ///
 /// Algorithm (SPEC.md §2, §6):
@@ -110,10 +213,13 @@ pub enum StabilizeError {
 /// 2. Once the counter reaches [`StabilizeConfig::stable_reads`], attempt an exclusive open
 ///    ([`try_open_exclusive`]). Success → return `Ok(StableFile { forced: false, .. })`.
 ///    A sharing violation resets the counter and the wait continues (a writer — or an
-///    antivirus scanner — still has the file open).
+///    antivirus scanner — still has the file open); this is logged, throttled, via
+///    [`log_lock_wait`] so the operator can see why a file is stuck instead of the loop
+///    running silently for up to 30 minutes.
 /// 3. If [`StabilizeConfig::timeout`] elapses before step 2 succeeds, log a `tracing::warn!`
-///    and return `Ok(StableFile { forced: true, .. })` with the last observed size/mtime —
-///    the pipeline proceeds anyway rather than stalling forever.
+///    (carrying the last observed lock error, if any) and return
+///    `Ok(StableFile { forced: true, .. })` with the last observed size/mtime — the pipeline
+///    proceeds anyway rather than stalling forever.
 pub async fn wait_until_stable(
     path: &Path,
     cfg: &StabilizeConfig,
@@ -121,9 +227,10 @@ pub async fn wait_until_stable(
     let start = tokio::time::Instant::now();
     let mut previous_len: Option<u64> = None;
     let mut consecutive_equal: u32 = 0;
+    let mut last_lock_error: Option<LockWaitState> = None;
 
     loop {
-        let metadata = read_metadata(path)?;
+        let metadata = read_metadata(path).await?;
         let len = metadata.len();
 
         consecutive_equal = match previous_len {
@@ -133,7 +240,7 @@ pub async fn wait_until_stable(
         previous_len = Some(len);
 
         if consecutive_equal >= cfg.stable_reads {
-            match try_open_exclusive(path) {
+            match try_open_exclusive(path).await {
                 Ok(()) => {
                     return Ok(StableFile {
                         size: metadata.len(),
@@ -141,20 +248,34 @@ pub async fn wait_until_stable(
                         forced: false,
                     });
                 }
-                Err(_sharing_violation) => {
+                Err(sharing_violation) => {
                     // Someone (writer, AV scanner) still has the file open. Reset and keep
                     // waiting — the size being unchanged is not enough on its own.
+                    log_lock_wait(path, &sharing_violation, &mut last_lock_error);
                     consecutive_equal = 0;
                 }
             }
         }
 
         if start.elapsed() >= cfg.timeout {
-            tracing::warn!(
-                path = %path.display(),
-                timeout_secs = cfg.timeout.as_secs(),
-                "wait_until_stable: tempo esgotado, prosseguindo mesmo assim",
-            );
+            match &last_lock_error {
+                Some(last) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %last.error_text,
+                        timeout_secs = cfg.timeout.as_secs(),
+                        "wait_until_stable: tempo esgotado, prosseguindo mesmo assim (última falha de abertura exclusiva: {})",
+                        last.kind.describe(),
+                    );
+                }
+                None => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        timeout_secs = cfg.timeout.as_secs(),
+                        "wait_until_stable: tempo esgotado, prosseguindo mesmo assim",
+                    );
+                }
+            }
             return Ok(StableFile {
                 size: metadata.len(),
                 mtime: mtime_of(&metadata),
@@ -166,8 +287,19 @@ pub async fn wait_until_stable(
     }
 }
 
-fn read_metadata(path: &Path) -> Result<std::fs::Metadata, StabilizeError> {
-    std::fs::metadata(path).map_err(|source| {
+/// Reads `path`'s filesystem metadata off the async runtime: `std::fs::metadata` is a
+/// blocking syscall, and this is invoked once per [`StabilizeConfig::interval`] per file being
+/// stabilized, so it must not tie up a Tokio worker thread (project rule: never block the
+/// Tokio runtime with heavy synchronous I/O; with concurrent intake across several files this
+/// would otherwise multiply).
+async fn read_metadata(path: &Path) -> Result<std::fs::Metadata, StabilizeError> {
+    let owned = path.to_path_buf();
+    let result = match tokio::task::spawn_blocking(move || std::fs::metadata(&owned)).await {
+        Ok(result) => result,
+        Err(join_err) => Err(std::io::Error::other(join_err)),
+    };
+
+    result.map_err(|source| {
         if source.kind() == std::io::ErrorKind::NotFound {
             StabilizeError::Vanished(path.to_path_buf())
         } else {
@@ -196,7 +328,20 @@ fn mtime_of(metadata: &std::fs::Metadata) -> DateTime<Utc> {
 /// Non-Windows: there is no POSIX equivalent of a sharing lock, so this degrades to a plain
 /// `File::open` — it only proves the path is readable, not that no writer is attached. See the
 /// module-level docs for why this gap is accepted.
-fn try_open_exclusive(path: &Path) -> std::io::Result<()> {
+///
+/// The actual open call runs on [`tokio::task::spawn_blocking`] — same reasoning as
+/// [`read_metadata`]: it's a blocking syscall invoked repeatedly from an `async fn`, and must
+/// not tie up a Tokio worker thread. The `share_mode(0)` semantics themselves are untouched;
+/// only *where* the call runs changed.
+async fn try_open_exclusive(path: &Path) -> std::io::Result<()> {
+    let owned = path.to_path_buf();
+    match tokio::task::spawn_blocking(move || try_open_exclusive_blocking(&owned)).await {
+        Ok(result) => result,
+        Err(join_err) => Err(std::io::Error::other(join_err)),
+    }
+}
+
+fn try_open_exclusive_blocking(path: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         use std::fs::OpenOptions;
@@ -392,6 +537,98 @@ mod tests {
     }
 
     #[test]
+    fn lock_error_kind_classifies_known_raw_os_codes() {
+        let cases = [
+            (5, LockErrorKind::AccessDenied),
+            (32, LockErrorKind::SharingViolation),
+            (33, LockErrorKind::LockViolation),
+            (99, LockErrorKind::Other(Some(99))),
+        ];
+
+        for (code, expected) in cases {
+            let err = std::io::Error::from_raw_os_error(code);
+            assert_eq!(
+                LockErrorKind::classify(&err),
+                expected,
+                "raw_os_error({code}) should classify as {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn lock_error_kind_falls_back_to_other_none_without_a_raw_code() {
+        let err = std::io::Error::new(std::io::ErrorKind::Other, "synthetic, no OS code");
+        assert_eq!(LockErrorKind::classify(&err), LockErrorKind::Other(None));
+    }
+
+    // Exercises the throttling directly against `log_lock_wait` rather than through
+    // `wait_until_stable`'s real polling loop: on non-Windows `try_open_exclusive` cannot be
+    // made to fail with a genuine sharing violation, but the throttling logic itself only
+    // depends on the classified `io::Error`, so it is fully testable without Windows.
+    #[tokio::test]
+    async fn log_lock_wait_throttles_repeated_same_kind_failures() {
+        let handle = crate::logging::init_for_tests();
+        let path = Path::new("locked.bin");
+        let sharing_violation = std::io::Error::from_raw_os_error(32);
+        let mut state: Option<LockWaitState> = None;
+
+        // 50 "polls" in a tight loop (well under LOCK_LOG_REPEAT_INTERVAL) must produce a
+        // single log line, not 50 — this is the flood the timeout path already avoids for its
+        // own message, and the wait loop must avoid it too.
+        for _ in 0..50 {
+            log_lock_wait(path, &sharing_violation, &mut state);
+        }
+
+        let matching = |handle: &crate::logging::LoggingHandle| {
+            handle
+                .recent(500)
+                .into_iter()
+                .filter(|line| line.message.contains("abertura exclusiva falhou"))
+                .count()
+        };
+
+        assert_eq!(
+            matching(&handle),
+            1,
+            "same lock error repeated in a tight loop should log once, not once per poll",
+        );
+
+        // A change in the classified kind is new information and must log immediately,
+        // regardless of how recently the previous line was emitted.
+        let access_denied = std::io::Error::from_raw_os_error(5);
+        log_lock_wait(path, &access_denied, &mut state);
+
+        assert_eq!(
+            matching(&handle),
+            2,
+            "a change in classified lock error kind should log again even inside the throttle window",
+        );
+
+        // Back to the original kind: this is itself a change relative to the *current*
+        // state (AccessDenied), so it logs too — kind-change always bypasses the throttle,
+        // regardless of whether that kind was seen earlier in the sequence.
+        log_lock_wait(path, &sharing_violation, &mut state);
+
+        assert_eq!(
+            matching(&handle),
+            3,
+            "a kind change logs even when reverting to a previously-seen kind",
+        );
+
+        // Now repeat that same (reverted-to) kind in a tight loop: back to throttled, because
+        // the state no longer reflects a *change* on each call.
+        for _ in 0..50 {
+            log_lock_wait(path, &sharing_violation, &mut state);
+        }
+
+        assert_eq!(
+            matching(&handle),
+            3,
+            "repeating the same kind again afterwards goes back to being throttled",
+        );
+    }
+
+    #[test]
     fn should_ignore_table() {
         let cases: &[(&str, bool)] = &[
             ("~$document.docx", true),
@@ -446,7 +683,7 @@ mod tests {
             .open(&path)
             .expect("hold exclusive handle");
 
-        assert!(try_open_exclusive(&path).is_err());
+        assert!(try_open_exclusive(&path).await.is_err());
     }
 
     // `watch.stabilize_seconds` was dead config: validated, persisted, shown

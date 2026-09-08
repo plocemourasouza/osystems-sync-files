@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { AppStatus, StatusCounts, RescanReport } from "@/types/generated";
+import type { AppStatus, StatusCounts, RescanProgress, RescanReport } from "@/types/generated";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { useStatusStore } from "@/store/statusStore";
 
@@ -19,6 +19,19 @@ vi.mock("@/api/ipc", async (importOriginal) => {
     listJobs: vi.fn(),
   };
 });
+
+// Mirrors RescanFailedBanner.test.tsx: capture the `useTauriEvent` handler for
+// "rescan-progress" so tests can fire it directly instead of going through a
+// real Tauri event bridge (absent in jsdom).
+let rescanProgressHandler: ((payload: RescanProgress) => void) | null = null;
+
+vi.mock("@/api/events", () => ({
+  useTauriEvent: vi.fn((eventName: string, handler: (payload: RescanProgress) => void) => {
+    if (eventName === "rescan-progress") {
+      rescanProgressHandler = handler;
+    }
+  }),
+}));
 
 import { clearCompleted, getStatus, listJobs, pauseWatcher, rescan, resumeWatcher, retryAllFailed } from "@/api/ipc";
 import { useJobsStore } from "@/store/jobsStore";
@@ -74,6 +87,7 @@ beforeEach(() => {
   mockedClearCompleted.mockReset();
   mockedListJobs.mockReset();
   mockedListJobs.mockResolvedValue({ items: [], total: 0 });
+  rescanProgressHandler = null;
 });
 
 describe("DashboardHeader", () => {
@@ -99,6 +113,7 @@ describe("DashboardHeader", () => {
       unchanged: 0,
       skipped_filtered: 0,
       skipped_symlink: 0,
+      skipped_unreadable: 0,
       errors: 0,
       archived: 0,
       restored: 0,
@@ -118,6 +133,47 @@ describe("DashboardHeader", () => {
 
     expect(mockedRescan).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("3 enfileirados")).toBeInTheDocument();
+  });
+
+  // T-2.4: a first scan over a large folder hashes every file and can take
+  // minutes -- a bare spinner is indistinguishable from a hang (the exact bug
+  // report this exists to fix). While `rescan()` is in flight, `rescan-progress`
+  // events must render a live "scanned/total" count, then disappear once the
+  // scan settles (whatever result it settles with).
+  it("shows a live scanned/total count while rescanning, and clears it once the scan settles", async () => {
+    const user = userEvent.setup();
+    mockedGetStatus.mockResolvedValue(status());
+    useStatusStore.setState({ status: status() });
+
+    let resolveRescan: (value: RescanReport) => void = () => {};
+    mockedRescan.mockImplementation(
+      () =>
+        new Promise<RescanReport>((resolve) => {
+          resolveRescan = resolve;
+        }),
+    );
+
+    render(<DashboardHeader />);
+    await user.click(screen.getByRole("button", { name: /atualizar lista/i }));
+
+    // Nothing to show before the first event of this scan arrives.
+    expect(screen.queryByText(/escaneando/i)).not.toBeInTheDocument();
+
+    expect(rescanProgressHandler).not.toBeNull();
+    rescanProgressHandler?.({ scanned: 4, total: 10 });
+    expect(await screen.findByText("Escaneando 4/10…")).toBeInTheDocument();
+
+    rescanProgressHandler?.({ scanned: 9, total: 10 });
+    expect(await screen.findByText("Escaneando 9/10…")).toBeInTheDocument();
+
+    resolveRescan(report({ scanned: 10, enqueued: 10 }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/escaneando/i)).not.toBeInTheDocument();
+    });
+    // The idle label is back and the completion count took over instead.
+    expect(screen.getByRole("button", { name: /atualizar lista/i })).toBeInTheDocument();
+    expect(await screen.findByText("10 enfileirados")).toBeInTheDocument();
   });
 
   // The reconciliation half: tightening a filter and hitting "Atualizar Lista"
@@ -198,6 +254,60 @@ describe("DashboardHeader", () => {
     expect(await screen.findByText("2 enfileirados")).toBeInTheDocument();
     expect(screen.queryByText(/removidos pelo filtro/)).not.toBeInTheDocument();
     expect(screen.queryByText(/recuperados/)).not.toBeInTheDocument();
+  });
+
+  // The full breakdown: a scan that skipped a permission-denied subtree (e.g.
+  // Windows' `System Volume Information` on E:\) must not look identical to a
+  // fully successful one — `scanned` always shows, `errors`/`skipped_unreadable`
+  // only when nonzero (same zero-is-noise treatment as archived/restored).
+  it("reports scanned, errors and skipped_unreadable alongside the enqueued count", async () => {
+    const user = userEvent.setup();
+    mockedRescan.mockResolvedValue(report({ scanned: 12, enqueued: 3, errors: 2, skipped_unreadable: 5 }));
+    mockedGetStatus.mockResolvedValue(status());
+    useStatusStore.setState({ status: status() });
+
+    render(<DashboardHeader />);
+    await user.click(screen.getByRole("button", { name: /atualizar lista/i }));
+
+    expect(await screen.findByText("12 escaneados")).toBeInTheDocument();
+    expect(screen.getByText("3 enfileirados")).toBeInTheDocument();
+    expect(screen.getByText("2 erros")).toBeInTheDocument();
+    expect(screen.getByText("5 pulados por permissão")).toBeInTheDocument();
+  });
+
+  // The reported bug: a rejected `rescan()` used to leave the button just
+  // stop spinning with no trace of why — `AppError.message` carries the real
+  // cause (an I/O error on the watched folder) and must reach the screen.
+  it("shows the AppError message when rescan() rejects, and stops the spinner", async () => {
+    const user = userEvent.setup();
+    mockedRescan.mockRejectedValue({
+      code: "rescan.error",
+      message: "io error while scanning: Acesso negado. (os error 5)",
+    });
+    mockedGetStatus.mockResolvedValue(status());
+    useStatusStore.setState({ status: status() });
+
+    render(<DashboardHeader />);
+    const rescanButton = screen.getByRole("button", { name: /atualizar lista/i });
+    await user.click(rescanButton);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Acesso negado. (os error 5)");
+    expect(rescanButton).not.toHaveAttribute("aria-busy", "true");
+  });
+
+  it("dismisses the rescan error banner when its dismiss button is clicked", async () => {
+    const user = userEvent.setup();
+    mockedRescan.mockRejectedValue({ code: "rescan.error", message: "io error: acesso negado" });
+    mockedGetStatus.mockResolvedValue(status());
+    useStatusStore.setState({ status: status() });
+
+    render(<DashboardHeader />);
+    await user.click(screen.getByRole("button", { name: /atualizar lista/i }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /dispensar erro de atualização/i }));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("calls clearCompleted and shows '2 arquivos arquivados' when it resolves 2", async () => {

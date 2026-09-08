@@ -31,6 +31,8 @@ function line(overrides: Partial<LogLine> = {}): LogLine {
     job_id: null,
     destination: null,
     message: "hello",
+    error: null,
+    path: null,
     ...overrides,
   };
 }
@@ -97,6 +99,26 @@ describe("LogConsole", () => {
       expect(rows(container)).toHaveLength(1);
     });
     expect(screen.getByText("boom")).toHaveClass("text-error");
+  });
+
+  it("push()ing a line with an error field renders the error detail alongside the message", async () => {
+    const { container } = render(<LogConsole />);
+    await waitFor(() => expect(mockedGetRecentLogs).toHaveBeenCalled());
+
+    useLogStore.getState().push(
+      line({
+        level: "WARN",
+        message: "varredura manual falhou",
+        error: "disk full",
+        path: "/tmp/inbox/report.pdf",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(rows(container)).toHaveLength(1);
+    });
+    expect(screen.getByText("varredura manual falhou")).toBeInTheDocument();
+    expect(screen.getByText("disk full — /tmp/inbox/report.pdf")).toBeInTheDocument();
   });
 
   it("selecting the error level filter shows only error lines", async () => {

@@ -339,6 +339,40 @@ pub struct AuthRequired {
     pub hint: String,
 }
 
+/// `rescan-failed` event payload: a background reconciliation scan (boot, resume from
+/// pause, resume from OS sleep, or the tray's manual rescan) aborted with a
+/// `RescanError`. `RescanError::NoPath` is never surfaced this way -- no folder chosen
+/// yet is the legitimate initial state, not an error the user needs to see.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RescanFailed {
+    /// `RescanError::to_string()` -- already a plain, non-secret message (an I/O error
+    /// on the watched folder or a `state.db` error), so unlike `AuthRequired`'s
+    /// notification body this needs no `logging::redact` pass before reaching the
+    /// renderer.
+    pub message: String,
+}
+
+/// `rescan-progress` event payload (PLAN.md T-2.4): emitted while the manual
+/// "Atualizar Lista" rescan is in its hash/intake phase, throttled by the
+/// core emitter (`rescan::PROGRESS_MIN_INTERVAL`) to at most twice a second,
+/// plus a final call once `scanned == total`. Boot/resume/tray rescans never
+/// emit this -- nothing in the UI shows their progress today.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RescanProgress {
+    /// Candidates whose hash/intake has completed so far. Not
+    /// `RescanReport::scanned`, which also counts entries the walk rejected
+    /// via filters before this phase ever started.
+    #[ts(type = "number")]
+    pub scanned: u32,
+    /// Total candidates this rescan will process -- known up front (the walk
+    /// collects every candidate before the expensive phase begins), so it is
+    /// stable across every `rescan-progress` event for one rescan.
+    #[ts(type = "number")]
+    pub total: u32,
+}
+
 #[cfg(test)]
 mod ipc_event_payload_tests {
     use super::*;
@@ -400,5 +434,21 @@ mod ipc_event_payload_tests {
             .collect();
         gdrive_keys.sort_unstable();
         assert_eq!(gdrive_keys, vec!["auth_required", "latency_ms", "online"]);
+    }
+
+    #[test]
+    fn rescan_failed_serializes_with_a_single_message_key() {
+        let payload = RescanFailed {
+            message: "io error while scanning: not found".to_string(),
+        };
+
+        let value = serde_json::to_value(&payload).expect("RescanFailed must serialize");
+        let keys: Vec<&str> = value
+            .as_object()
+            .expect("RescanFailed serializes as a JSON object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, vec!["message"]);
     }
 }

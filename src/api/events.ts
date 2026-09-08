@@ -8,10 +8,27 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
-import type { AppStatus, AuthRequired, JobView, LogLine, Throughput, UploadProgress } from "@/types/generated";
+import type {
+  AppStatus,
+  AuthRequired,
+  JobView,
+  LogLine,
+  RescanFailed,
+  RescanProgress,
+  Throughput,
+  UploadProgress,
+} from "@/types/generated";
 
 /** Every event the Rust core emits (SPEC.md §7 "Events"). */
-export type EventName = "status-changed" | "job-updated" | "upload-progress" | "throughput" | "log-line" | "auth-required";
+export type EventName =
+  | "status-changed"
+  | "job-updated"
+  | "upload-progress"
+  | "throughput"
+  | "log-line"
+  | "auth-required"
+  | "rescan-failed"
+  | "rescan-progress";
 
 /** Payload type for each {@link EventName}. */
 export interface EventPayloadMap {
@@ -21,6 +38,8 @@ export interface EventPayloadMap {
   throughput: Throughput;
   "log-line": LogLine;
   "auth-required": AuthRequired;
+  "rescan-failed": RescanFailed;
+  "rescan-progress": RescanProgress;
 }
 
 export type PayloadOf<E extends EventName> = EventPayloadMap[E];

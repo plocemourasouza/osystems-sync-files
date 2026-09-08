@@ -37,6 +37,17 @@ skipped_filtered: number,
  */
 skipped_symlink: number, 
 /**
+ * Directory entries the walk could not read: a subdirectory whose
+ * `read_dir`/`next_entry` failed (permission denied, e.g. Windows'
+ * `System Volume Information`), an entry whose `symlink_metadata`
+ * failed (deleted between `read_dir` and the `stat`, or locked by
+ * another process), or a Windows system path skipped by
+ * [`crate::paths::is_system_path`]. Never aborts the scan — logged via
+ * `tracing::warn!` and counted, except when the ROOT itself cannot be
+ * read, which is a genuine [`RescanError::Io`].
+ */
+skipped_unreadable: number, 
+/**
  * Per-file failures (I/O, stabilize, or queue errors). Logged via
  * `tracing::warn!` when they happen; the scan continues regardless.
  */

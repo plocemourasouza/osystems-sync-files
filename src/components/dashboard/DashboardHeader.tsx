@@ -14,13 +14,14 @@
  */
 import type { JSX } from "react";
 import { useEffect, useRef, useState } from "react";
-import { Pause, Play, RefreshCw, RotateCw, Trash2 } from "lucide-react";
-import { clearCompleted, retryAllFailed } from "@/api/ipc";
+import { AlertTriangle, Pause, Play, RefreshCw, RotateCw, Trash2, X } from "lucide-react";
+import { clearCompleted, isAppError, retryAllFailed } from "@/api/ipc";
+import { useTauriEvent } from "@/api/events";
 import { Button } from "@/components/ui/Button";
 import { t } from "@/i18n";
 import { useJobsStore } from "@/store/jobsStore";
 import { selectKpis, useStatusStore } from "@/store/statusStore";
-import type { RescanReport } from "@/types/generated";
+import type { RescanProgress, RescanReport } from "@/types/generated";
 
 const ACTION_COUNT_DISPLAY_MS = 3000;
 
@@ -31,9 +32,20 @@ export function DashboardHeader(): JSX.Element {
   const refetchJobs = useJobsStore((s) => s.fetch);
 
   const [rescanning, setRescanning] = useState(false);
+  // Live "N/total" count for a rescan in progress (`rescan-progress`, PLAN.md
+  // T-2.4) -- a first scan over a large folder can take minutes hashing every
+  // file, and a bare spinner is indistinguishable from a hang. `null` until
+  // the first event of a given scan arrives (there is no candidate count to
+  // show before the walk finishes) and reset on every new attempt.
+  const [rescanProgress, setRescanProgress] = useState<RescanProgress | null>(null);
   // The whole report, not just a count: a rescan now both enqueues and
   // archives, and the header reports each half separately.
   const [rescanResult, setRescanResult] = useState<RescanReport | null>(null);
+  // Surfaces the `AppError.message` of a rejected `rescan()` (e.g. "io error
+  // while scanning: Acesso negado (os error 5)") — otherwise the button just
+  // stops spinning and the screen looks unchanged, which is the exact bug
+  // report this exists to fix. Persists until dismissed or the next attempt.
+  const [rescanError, setRescanError] = useState<string | null>(null);
   const [togglingWatcher, setTogglingWatcher] = useState(false);
   const [retryingFailed, setRetryingFailed] = useState(false);
   const [retryFailedCount, setRetryFailedCount] = useState<number | null>(null);
@@ -55,8 +67,17 @@ export function DashboardHeader(): JSX.Element {
   const watcherPaused = status?.watcher_paused ?? false;
   const kpis = selectKpis(status);
 
+  // Only the manual rescan this button triggers emits `rescan-progress`
+  // (boot/resume/tray scans have nowhere to show it), so this listener can
+  // stay unconditional -- it simply never fires outside a `handleRescan` call.
+  useTauriEvent("rescan-progress", (payload) => {
+    setRescanProgress(payload);
+  });
+
   const handleRescan = async (): Promise<void> => {
     setRescanning(true);
+    setRescanError(null);
+    setRescanProgress(null);
     try {
       const report = await rescan();
       setRescanResult(report);
@@ -69,8 +90,17 @@ export function DashboardHeader(): JSX.Element {
       // screen are stale the moment it returns. Without this the KPIs moved
       // while the list sat still until the user touched the filter.
       await refetchJobs({ force: true });
+    } catch (e) {
+      // `rescan` maps its failure to `AppError { code: "rescan.error", message }`
+      // (e.g. an I/O permission error on the watched folder) — surface the real
+      // cause instead of leaving the button silently stop spinning.
+      setRescanResult(null);
+      setRescanError(
+        isAppError(e) ? e.message : e instanceof Error ? e.message : t("pages.dashboard.actions.rescanErrorUnknown"),
+      );
     } finally {
       setRescanning(false);
+      setRescanProgress(null);
     }
   };
 
@@ -118,85 +148,138 @@ export function DashboardHeader(): JSX.Element {
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-sm">
-      {/* The watcher badge used to live here; it now sits opposite the filter
+    <div className="flex flex-col gap-sm">
+      <div className="flex flex-wrap items-center justify-between gap-sm">
+        {/* The watcher badge used to live here; it now sits opposite the filter
           bar on the table's toolbar row (`WatcherStatusBadge`), next to the
           list whose count it reports. */}
-      <h1 id="dashboard-title" className="text-headline-lg text-text-primary">
-        {t("pages.dashboard.title")}
-      </h1>
+        <h1 id="dashboard-title" className="text-headline-lg text-text-primary">
+          {t("pages.dashboard.title")}
+        </h1>
 
-      <div className="flex items-center gap-sm">
-        {rescanResult !== null && (
-          <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
-            {t("pages.dashboard.actions.rescanQueued", { count: rescanResult.enqueued })}
-          </span>
-        )}
-        {/* Only when it happened: on a normal rescan nothing is archived, and a
+        <div className="flex items-center gap-sm">
+          {/* Live count while a scan is running -- a rescan over a large
+            folder hashes every file and can take minutes; without this the
+            spinner alone is indistinguishable from a hang (the exact bug
+            report this exists to fix). Only rendered once the first event
+            arrives, since there's nothing to show before the walk finishes. */}
+          {rescanning && rescanProgress !== null && (
+            <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
+              {t("pages.dashboard.actions.rescanProgress", {
+                scanned: rescanProgress.scanned,
+                total: rescanProgress.total,
+              })}
+            </span>
+          )}
+          {rescanResult !== null && (
+            <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
+              {t("pages.dashboard.actions.rescanScanned", { count: rescanResult.scanned })}
+            </span>
+          )}
+          {rescanResult !== null && (
+            <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
+              {t("pages.dashboard.actions.rescanQueued", { count: rescanResult.enqueued })}
+            </span>
+          )}
+          {/* Only when it happened: on a normal rescan nothing is archived, and a
             permanent "0 removidos" would be noise next to the enqueued count. */}
-        {rescanResult !== null && rescanResult.archived > 0 && (
-          <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
-            {t("pages.dashboard.actions.rescanArchived", { count: rescanResult.archived })}
-          </span>
-        )}
-        {rescanResult !== null && rescanResult.restored > 0 && (
-          <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
-            {t("pages.dashboard.actions.rescanRestored", { count: rescanResult.restored })}
-          </span>
-        )}
-        {retryFailedCount !== null && (
-          <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
-            {t("pages.dashboard.actions.retryFailedCount", { count: retryFailedCount })}
-          </span>
-        )}
-        {clearDoneCount !== null && (
-          <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
-            {t("pages.dashboard.actions.clearDoneCount", { count: clearDoneCount })}
-          </span>
-        )}
+          {rescanResult !== null && rescanResult.archived > 0 && (
+            <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
+              {t("pages.dashboard.actions.rescanArchived", { count: rescanResult.archived })}
+            </span>
+          )}
+          {rescanResult !== null && rescanResult.restored > 0 && (
+            <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
+              {t("pages.dashboard.actions.rescanRestored", { count: rescanResult.restored })}
+            </span>
+          )}
+          {/* Same zero-is-noise treatment, but in error tone: without these a scan
+            that skipped a permission-denied subtree (e.g. Windows' `System
+            Volume Information` on E:\) looks identical to a complete one. */}
+          {rescanResult !== null && rescanResult.errors > 0 && (
+            <span role="status" className="font-mono text-label-sm text-error">
+              {t("pages.dashboard.actions.rescanErrors", { count: rescanResult.errors })}
+            </span>
+          )}
+          {rescanResult !== null && rescanResult.skipped_unreadable > 0 && (
+            <span role="status" className="font-mono text-label-sm text-error">
+              {t("pages.dashboard.actions.rescanSkippedUnreadable", { count: rescanResult.skipped_unreadable })}
+            </span>
+          )}
+          {retryFailedCount !== null && (
+            <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
+              {t("pages.dashboard.actions.retryFailedCount", { count: retryFailedCount })}
+            </span>
+          )}
+          {clearDoneCount !== null && (
+            <span aria-live="polite" className="font-mono text-label-sm text-text-secondary">
+              {t("pages.dashboard.actions.clearDoneCount", { count: clearDoneCount })}
+            </span>
+          )}
 
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<RefreshCw size={16} aria-hidden="true" />}
-          loading={rescanning}
-          onClick={() => void handleRescan()}
-        >
-          {t("pages.dashboard.actions.rescan")}
-        </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<RefreshCw size={16} aria-hidden="true" />}
+            loading={rescanning}
+            onClick={() => void handleRescan()}
+          >
+            {t("pages.dashboard.actions.rescan")}
+          </Button>
 
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={watcherPaused ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}
-          loading={togglingWatcher}
-          onClick={() => void handleToggleWatcher()}
-        >
-          {watcherPaused ? t("pages.dashboard.actions.resume") : t("pages.dashboard.actions.pause")}
-        </Button>
-
-        {kpis.failed > 0 && (
           <Button
             variant="secondary"
             size="sm"
-            icon={<RotateCw size={16} aria-hidden="true" />}
-            loading={retryingFailed}
-            onClick={() => void handleRetryFailed()}
+            icon={watcherPaused ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}
+            loading={togglingWatcher}
+            onClick={() => void handleToggleWatcher()}
           >
-            {t("pages.dashboard.actions.retryFailed")}
+            {watcherPaused ? t("pages.dashboard.actions.resume") : t("pages.dashboard.actions.pause")}
           </Button>
-        )}
 
-        <Button
-          variant="primary"
-          size="sm"
-          icon={<Trash2 size={16} aria-hidden="true" />}
-          loading={clearingDone}
-          onClick={() => void handleClearDone()}
-        >
-          {t("pages.dashboard.actions.clearDone")}
-        </Button>
+          {kpis.failed > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RotateCw size={16} aria-hidden="true" />}
+              loading={retryingFailed}
+              onClick={() => void handleRetryFailed()}
+            >
+              {t("pages.dashboard.actions.retryFailed")}
+            </Button>
+          )}
+
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Trash2 size={16} aria-hidden="true" />}
+            loading={clearingDone}
+            onClick={() => void handleClearDone()}
+          >
+            {t("pages.dashboard.actions.clearDone")}
+          </Button>
+        </div>
       </div>
+
+      {rescanError !== null && (
+        <div
+          role="alert"
+          className="flex items-center gap-sm rounded border border-error bg-status-error-bg px-md py-xs text-error"
+        >
+          <AlertTriangle aria-hidden="true" size={16} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate font-mono text-label-sm">
+            <span className="font-semibold">{t("pages.dashboard.actions.rescanErrorTitle")}: </span>
+            <span title={rescanError}>{rescanError}</span>
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            icon={<X size={14} aria-hidden="true" />}
+            onClick={() => setRescanError(null)}
+            aria-label={t("pages.dashboard.actions.rescanErrorDismiss")}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { create } from "zustand";
 
 import {
   getStatus,
+  isAppError,
   pauseWatcher as ipcPauseWatcher,
   pickFolder as ipcPickFolder,
   rescan as ipcRescan,
@@ -72,9 +73,19 @@ export const useStatusStore = create<StatusStore>()((set, get) => ({
 
   actions: {
     rescan: async () => {
-      const report = await ipcRescan();
-      await get().refresh();
-      return report;
+      try {
+        const report = await ipcRescan();
+        await get().refresh();
+        return report;
+      } catch (e) {
+        // `refresh()` already swallows its own `getStatus()` failures and
+        // records them here (see above) — do the same for `rescan` itself so
+        // the store stays the single source of truth for "last error",
+        // then rethrow so the caller (DashboardHeader) can still show it
+        // inline right where the action was triggered.
+        set({ error: isAppError(e) ? e.message : e instanceof Error ? e.message : "unknown" });
+        throw e;
+      }
     },
 
     pauseWatcher: async () => {

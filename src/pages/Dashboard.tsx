@@ -41,6 +41,7 @@ import {
   JobTable,
   KpiRow,
   LogConsole,
+  RescanFailedBanner,
 } from "@/components/dashboard";
 import { useConfigStore } from "@/store/configStore";
 import { useCredentialsStore } from "@/store/credentialsStore";
@@ -81,6 +82,7 @@ export function Dashboard() {
     <section aria-labelledby="dashboard-title" className="flex h-full min-h-0 flex-col gap-md">
       <DashboardHeader />
       <AuthRequiredBanner />
+      <RescanFailedBanner />
 
       {hasFolder ? (
         <>

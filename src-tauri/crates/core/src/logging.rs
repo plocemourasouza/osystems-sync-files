@@ -15,9 +15,11 @@
 //! # Redaction (RNF-015)
 //!
 //! `RNF-015` forbids ever logging a secret, a Service Account JSON path, or a token.
-//! [`redact`] scans every event's `message` field for the patterns below before it
-//! reaches the ring, the broadcast channel, or the log file, and replaces the offending
-//! part with `[REDACTED]`:
+//! [`redact`] scans every event's `message`, `error`, and `path` fields for the patterns
+//! below before it reaches the ring, the broadcast channel, or the log file, and replaces
+//! the offending part with `[REDACTED]` — an error's `Display`/`Debug` output can embed a
+//! secret (an S3 presigned URL, a token, a Service Account fragment) just as easily as the
+//! message can:
 //!
 //! - AWS access key ids: `AKIA[0-9A-Z]{16}`
 //! - AWS STS temporary access key ids: `ASIA[0-9A-Z]{16}`
@@ -80,7 +82,7 @@ const MAX_BACKUPS: u32 = 5;
 /// (`src-tauri/src/events.rs`) and the JSON log file.
 ///
 /// Matches the payload documented in `SPEC.md` §7: `{ ts, level, target, job_id?,
-/// destination?, message }`.
+/// destination?, message, error?, path? }`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export)]
 pub struct LogLine {
@@ -96,6 +98,14 @@ pub struct LogLine {
     pub destination: Option<String>,
     /// Human-readable message, already redacted (see module docs).
     pub message: String,
+    /// Present when the event carried an `error` field (e.g. `error = %err`),
+    /// already redacted (see module docs) — an error's `Display`/`Debug` output can embed a
+    /// secret (a presigned URL, a token, a Service Account fragment) just as
+    /// easily as `message` can.
+    pub error: Option<String>,
+    /// Present when the event carried a `path` field (e.g. `path = %p.display()`),
+    /// already redacted (see module docs).
+    pub path: Option<String>,
 }
 
 /// Errors that can occur while setting up logging.
@@ -251,6 +261,8 @@ where
             job_id: visitor.job_id,
             destination: visitor.destination,
             message: redact(&visitor.message),
+            error: visitor.error.map(|e| redact(&e)),
+            path: visitor.path.map(|p| redact(&p)),
         };
 
         match self.ring.lock() {
@@ -281,12 +293,15 @@ where
     }
 }
 
-/// Extracts `message`, `job_id`, and `destination` fields from a `tracing::Event`.
+/// Extracts `message`, `job_id`, `destination`, `error`, and `path` fields from a
+/// `tracing::Event`.
 #[derive(Default)]
 struct LogVisitor {
     message: String,
     job_id: Option<String>,
     destination: Option<String>,
+    error: Option<String>,
+    path: Option<String>,
 }
 
 impl Visit for LogVisitor {
@@ -295,6 +310,8 @@ impl Visit for LogVisitor {
             "message" => self.message = value.to_string(),
             "job_id" => self.job_id = Some(value.to_string()),
             "destination" => self.destination = Some(value.to_string()),
+            "error" => self.error = Some(value.to_string()),
+            "path" => self.path = Some(value.to_string()),
             _ => {}
         }
     }
@@ -305,6 +322,8 @@ impl Visit for LogVisitor {
             "message" => self.message = formatted,
             "job_id" => self.job_id = Some(formatted),
             "destination" => self.destination = Some(formatted),
+            "error" => self.error = Some(formatted),
+            "path" => self.path = Some(formatted),
             _ => {}
         }
     }
@@ -674,6 +693,53 @@ mod tests {
             .expect("event without fields should be in the ring");
         assert_eq!(without_fields.job_id, None);
         assert_eq!(without_fields.destination, None);
+    }
+
+    #[test]
+    fn log_line_carries_error_and_path_when_present() {
+        let handle = init_for_tests();
+
+        let some_err = std::io::Error::new(std::io::ErrorKind::Other, "disk full");
+        let p = std::path::Path::new("/tmp/inbox/report.pdf");
+        tracing::warn!(error = %some_err, path = %p.display(), "varredura manual falhou");
+        tracing::info!("no structured fields here");
+
+        let recent = handle.recent(10);
+        let with_fields = recent
+            .iter()
+            .find(|l| l.message == "varredura manual falhou")
+            .expect("event with fields should be in the ring");
+        assert_eq!(with_fields.error.as_deref(), Some("disk full"));
+        assert_eq!(with_fields.path.as_deref(), Some("/tmp/inbox/report.pdf"));
+
+        let without_fields = recent
+            .iter()
+            .find(|l| l.message == "no structured fields here")
+            .expect("event without fields should be in the ring");
+        assert_eq!(without_fields.error, None);
+        assert_eq!(without_fields.path, None);
+    }
+
+    /// RNF-015: an error's `Display` output can carry a secret just as easily as
+    /// `message` can — e.g. an S3 SDK error wrapping a presigned URL, or a
+    /// deserialization error echoing back a Service Account credential fragment. The
+    /// `error` field must go through the same [`redact`] as `message`, not bypass it.
+    #[test]
+    fn error_field_is_redacted() {
+        let handle = init_for_tests();
+
+        let leaky_err = "upload failed: key AKIAABCDEFGHIJKLMNOP rejected";
+        tracing::error!(error = %leaky_err, "upload falhou");
+
+        let recent = handle.recent(10);
+        let line = recent
+            .iter()
+            .find(|l| l.message == "upload falhou")
+            .expect("event should be in the ring");
+        assert_eq!(
+            line.error.as_deref(),
+            Some("upload failed: key [REDACTED] rejected")
+        );
     }
 
     #[test]

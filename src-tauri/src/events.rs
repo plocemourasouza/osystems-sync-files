@@ -18,9 +18,10 @@ use std::time::{Duration, Instant};
 use osystems_sync_core::health::HealthSink;
 use osystems_sync_core::logging::{redact, LogLine, LoggingHandle};
 use osystems_sync_core::queue;
+use osystems_sync_core::rescan::{RescanError, RescanProgressSink};
 use osystems_sync_core::state::{
     AppStatus, AuthRequired, Destination, DestinationsHealth, JobSide, JobStatus, JobView, Repo,
-    Throughput, UploadProgress,
+    RescanFailed, RescanProgress, Throughput, UploadProgress,
 };
 use osystems_sync_core::worker::WorkerEvents;
 use tauri::{AppHandle, Emitter};
@@ -54,6 +55,20 @@ pub const EV_LOG_LINE: &str = "log-line";
 #[allow(dead_code)]
 /// `auth-required` event name (SPEC.md §7). Payload: [`AuthRequired`].
 pub const EV_AUTH_REQUIRED: &str = "auth-required";
+/// `rescan-failed` event name: a background reconciliation scan aborted with a
+/// `RescanError` other than `NoPath` (PLAN.md T-1.4 follow-up). Payload:
+/// [`RescanFailed`]. Emitted via [`notify_rescan_failure`] — new rescan call sites
+/// should go through that helper rather than calling `emit_rescan_failed` directly,
+/// so the `NoPath`-is-not-an-error rule can't be forgotten at a new site.
+pub const EV_RESCAN_FAILED: &str = "rescan-failed";
+/// `rescan-progress` event name (PLAN.md T-2.4): emitted while the manual
+/// rescan command's hash/intake phase is running, so the UI can show a live
+/// count instead of an indeterminate spinner over a folder that can take
+/// minutes to scan. Payload: [`RescanProgress`]. Emitted via
+/// [`rescan_progress_sink`] — new call sites that want this should build
+/// their [`RescanProgressSink`] through that helper rather than constructing
+/// the closure by hand.
+pub const EV_RESCAN_PROGRESS: &str = "rescan-progress";
 
 /// Emits `event` with a clone of `payload`, logging (never panicking) if the frontend
 /// isn't there to receive it.
@@ -95,6 +110,82 @@ pub fn emit_log_line(app: &AppHandle, line: &LogLine) {
 /// Emits `auth-required` when a destination starts needing re-authentication.
 pub fn emit_auth_required(app: &AppHandle, auth: &AuthRequired) {
     emit_event(app, EV_AUTH_REQUIRED, auth);
+}
+
+/// Emits `rescan-failed` with `err`'s message. Prefer [`notify_rescan_failure`] at
+/// call sites — it also applies the `NoPath` exclusion this raw emitter does not.
+pub fn emit_rescan_failed(app: &AppHandle, err: &RescanError) {
+    emit_event(
+        app,
+        EV_RESCAN_FAILED,
+        &RescanFailed {
+            message: err.to_string(),
+        },
+    );
+}
+
+/// Pure decision for [`notify_rescan_failure`]: is `err` worth telling the user
+/// about? Split out (no `AppHandle`) so it is unit-testable without a real Tauri
+/// app, the same way [`should_notify`] is for the OS-notification rate limiter.
+/// `false` for [`RescanError::NoPath`] (no folder chosen yet is the legitimate
+/// initial state, not a failure) and for [`RescanError::AlreadyInProgress`]
+/// (PLAN.md T-2.5: another rescan is already running — normal/expected under the
+/// six independent call sites, not a failure either).
+fn should_notify_rescan_failure(err: &RescanError) -> bool {
+    !matches!(err, RescanError::NoPath | RescanError::AlreadyInProgress)
+}
+
+/// Logs and emits `rescan-failed` for a background rescan failure, unless
+/// [`should_notify_rescan_failure`] says `err` doesn't warrant it (mirrors the
+/// exclusion `SyncRuntime::start`/`resume` already log around).
+/// [`RescanError::AlreadyInProgress`] gets its own `tracing::debug!` line (with
+/// `context`, since a skip is routine, not worth `warn!`) rather than falling
+/// through silently — everything else excluded by
+/// `should_notify_rescan_failure` (just `NoPath`) stays silent as before.
+/// `context` is a short pt-BR label identifying the call site (boot, resume,
+/// tray, ...) for the log line only; the emitted event carries just `err`'s
+/// message, with no call-site context, since the renderer doesn't need to
+/// distinguish which rescan failed.
+///
+/// Centralizing this (rather than repeating the `NoPath`/`AlreadyInProgress`
+/// guard at every one of the 5 background call sites — `runtime::start`,
+/// `runtime`'s periodic reconcile loop and `ResumeDetectorSink`, `tray.rs`'s
+/// `toggle_watcher`/`rescan_from_tray`, `commands::queue::resume_watcher`) is
+/// what keeps a future 6th call site from silently swallowing the error again
+/// the same way this one had to be fixed. The manual "Atualizar Lista" button
+/// (`commands::queue::rescan`) does NOT go through here — it must surface
+/// `AlreadyInProgress` to the user distinctly rather than no-op, so it handles
+/// that variant itself before this function would ever see it.
+pub fn notify_rescan_failure(app: &AppHandle, context: &str, err: RescanError) {
+    if matches!(err, RescanError::AlreadyInProgress) {
+        tracing::debug!(
+            context,
+            "varredura pulada: já existe uma varredura em andamento"
+        );
+        return;
+    }
+    if !should_notify_rescan_failure(&err) {
+        return;
+    }
+    tracing::warn!(error = %err, context, "varredura de reconciliação falhou");
+    emit_rescan_failed(app, &err);
+}
+
+/// Emits `rescan-progress` with `scanned`/`total` candidates processed so far.
+pub fn emit_rescan_progress(app: &AppHandle, progress: &RescanProgress) {
+    emit_event(app, EV_RESCAN_PROGRESS, progress);
+}
+
+/// Builds a [`RescanProgressSink`] that emits `rescan-progress` on `app` —
+/// `core::rescan` never depends on `tauri` itself (this crate's cardinal
+/// rule), so the manual rescan command builds this closure and hands it to
+/// [`osystems_sync_core::rescan::rescan_with_progress`] the same way
+/// `runtime.rs` builds `S3Uploader::with_state_sink`'s closure.
+pub fn rescan_progress_sink(app: &AppHandle) -> RescanProgressSink {
+    let app = app.clone();
+    Arc::new(move |scanned, total| {
+        emit_rescan_progress(&app, &RescanProgress { scanned, total });
+    })
 }
 
 /// SPEC.md §7: `status-changed` must not fire more than ~twice a second even under a
@@ -522,6 +613,8 @@ mod tests {
             job_id: None,
             destination: None,
             message: "sample".to_string(),
+            error: None,
+            path: None,
         }
     }
 
@@ -586,6 +679,35 @@ mod tests {
             &mut last,
             "auth",
             t0 + Duration::from_secs(1)
+        ));
+    }
+
+    // ---- T-1.4 follow-up: rescan-failed notification gate -----------------------
+
+    #[test]
+    fn should_notify_rescan_failure_is_false_for_no_path() {
+        // `NoPath` (no folder configured yet) must stay silent — it is not a failure
+        // an initial-run boot scan should surface to the user.
+        assert!(!should_notify_rescan_failure(
+            &osystems_sync_core::rescan::RescanError::NoPath
+        ));
+    }
+
+    #[test]
+    fn should_notify_rescan_failure_is_true_for_an_io_error() {
+        let err = osystems_sync_core::rescan::RescanError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "watch folder is gone",
+        ));
+        assert!(should_notify_rescan_failure(&err));
+    }
+
+    #[test]
+    fn should_notify_rescan_failure_is_false_for_already_in_progress() {
+        // T-2.5: another rescan already running is expected under 6 independent
+        // call sites, not a failure — background initiators must no-op silently.
+        assert!(!should_notify_rescan_failure(
+            &osystems_sync_core::rescan::RescanError::AlreadyInProgress
         ));
     }
 

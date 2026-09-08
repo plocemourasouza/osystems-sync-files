@@ -115,14 +115,14 @@ const MOCK_JOBS: JobView[] = [
  * slips (two entries share the 13:24:00 second, written ascending).
  */
 const MOCK_LOG_LINES_NEWEST_FIRST: LogLine[] = [
-  { ts: "2026-09-04T13:24:00.100Z", level: "INFO", target: "osystems_sync_lib::watcher", job_id: null, destination: null, message: "Novo arquivo detectado: contrato-fornecedor-2026.pdf (245 KB)" },
-  { ts: "2026-09-04T13:24:00.400Z", level: "DEBUG", target: "osystems_sync_lib::hash", job_id: "f1", destination: null, message: "SHA-256 calculado em 187ms" },
-  { ts: "2026-09-04T13:18:02.000Z", level: "INFO", target: "osystems_sync_lib::uploaders::gdrive", job_id: "f2-gdrive", destination: "gdrive", message: "Upload iniciado: backup-financeiro-setembro.zip" },
-  { ts: "2026-09-04T13:18:15.250Z", level: "INFO", target: "osystems_sync_lib::uploaders::gdrive", job_id: "f2-gdrive", destination: "gdrive", message: "Progresso: 420.0 MB / 1.80 GB (23%) a 8.4 MB/s" },
-  { ts: "2026-09-04T12:55:10.000Z", level: "WARN", target: "osystems_sync_lib::uploaders::gdrive", job_id: "f3-gdrive", destination: "gdrive", message: "Upload pausado manualmente pelo usuário" },
-  { ts: "2026-09-04T11:40:05.000Z", level: "INFO", target: "osystems_sync_lib::uploaders::s3", job_id: "f4-s3", destination: "s3", message: "Upload concluído: aditivo-contratual-cliente-premium.docx" },
-  { ts: "2026-09-04T11:40:06.000Z", level: "INFO", target: "osystems_sync_lib::state", job_id: "f4", destination: null, message: "Job f4 marcado como sincronizado em ambos os destinos" },
-  { ts: "2026-09-04T10:05:20.000Z", level: "WARN", target: "osystems_sync_lib::queue", job_id: "f5-gdrive", destination: "gdrive", message: "Job cancelado pelo usuário antes do envio" },
+  { ts: "2026-09-04T13:24:00.100Z", level: "INFO", target: "osystems_sync_lib::watcher", job_id: null, destination: null, message: "Novo arquivo detectado: contrato-fornecedor-2026.pdf (245 KB)" , error: null, path: null },
+  { ts: "2026-09-04T13:24:00.400Z", level: "DEBUG", target: "osystems_sync_lib::hash", job_id: "f1", destination: null, message: "SHA-256 calculado em 187ms" , error: null, path: null },
+  { ts: "2026-09-04T13:18:02.000Z", level: "INFO", target: "osystems_sync_lib::uploaders::gdrive", job_id: "f2-gdrive", destination: "gdrive", message: "Upload iniciado: backup-financeiro-setembro.zip" , error: null, path: null },
+  { ts: "2026-09-04T13:18:15.250Z", level: "INFO", target: "osystems_sync_lib::uploaders::gdrive", job_id: "f2-gdrive", destination: "gdrive", message: "Progresso: 420.0 MB / 1.80 GB (23%) a 8.4 MB/s" , error: null, path: null },
+  { ts: "2026-09-04T12:55:10.000Z", level: "WARN", target: "osystems_sync_lib::uploaders::gdrive", job_id: "f3-gdrive", destination: "gdrive", message: "Upload pausado manualmente pelo usuário" , error: null, path: null },
+  { ts: "2026-09-04T11:40:05.000Z", level: "INFO", target: "osystems_sync_lib::uploaders::s3", job_id: "f4-s3", destination: "s3", message: "Upload concluído: aditivo-contratual-cliente-premium.docx" , error: null, path: null },
+  { ts: "2026-09-04T11:40:06.000Z", level: "INFO", target: "osystems_sync_lib::state", job_id: "f4", destination: null, message: "Job f4 marcado como sincronizado em ambos os destinos" , error: null, path: null },
+  { ts: "2026-09-04T10:05:20.000Z", level: "WARN", target: "osystems_sync_lib::queue", job_id: "f5-gdrive", destination: "gdrive", message: "Job cancelado pelo usuário antes do envio" , error: null, path: null },
   {
     ts: "2026-09-04T09:30:45.000Z",
     level: "ERROR",
@@ -131,10 +131,12 @@ const MOCK_LOG_LINES_NEWEST_FIRST: LogLine[] = [
     destination: "s3",
     message:
       "Falha no upload de relatorio-mensal-consolidado-setembro-2026-versao-final-revisado.pdf: 403 Forbidden: Access Denied — verifique as permissões do bucket e a política IAM associada às credenciais configuradas",
+    error: "403 Forbidden: Access Denied",
+    path: null,
   },
-  { ts: "2026-09-04T09:30:46.000Z", level: "INFO", target: "osystems_sync_lib::queue", job_id: "f6-s3", destination: "s3", message: "Nova tentativa agendada (3/5) em 40s" },
-  { ts: "2026-09-04T09:25:00.000Z", level: "INFO", target: "osystems_sync_lib_bin", job_id: null, destination: null, message: "oSystems Sync iniciado — versão 0.9.0 (x86_64-pc-windows-msvc)" },
-  { ts: "2026-09-04T09:24:58.000Z", level: "DEBUG", target: "osystems_sync_lib::watcher", job_id: null, destination: null, message: "Observando pasta: C:\\monitoramento (recursivo: não)" },
+  { ts: "2026-09-04T09:30:46.000Z", level: "INFO", target: "osystems_sync_lib::queue", job_id: "f6-s3", destination: "s3", message: "Nova tentativa agendada (3/5) em 40s" , error: null, path: null },
+  { ts: "2026-09-04T09:25:00.000Z", level: "INFO", target: "osystems_sync_lib_bin", job_id: null, destination: null, message: "oSystems Sync iniciado — versão 0.9.0 (x86_64-pc-windows-msvc)" , error: null, path: null },
+  { ts: "2026-09-04T09:24:58.000Z", level: "DEBUG", target: "osystems_sync_lib::watcher", job_id: null, destination: null, message: "Observando pasta: C:\\monitoramento (recursivo: não)" , error: null, path: null },
 ];
 
 const MOCK_STATUS: AppStatus = {

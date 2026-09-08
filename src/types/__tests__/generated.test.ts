@@ -56,6 +56,8 @@ describe("generated IPC types", () => {
       job_id: null,
       destination: null,
       message: "watcher started",
+      error: null,
+      path: null,
     };
 
     expect(line.level).toBe("INFO");

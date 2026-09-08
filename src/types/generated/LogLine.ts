@@ -5,7 +5,7 @@
  * (`src-tauri/src/events.rs`) and the JSON log file.
  *
  * Matches the payload documented in `SPEC.md` §7: `{ ts, level, target, job_id?,
- * destination?, message }`.
+ * destination?, message, error?, path? }`.
  */
 export type LogLine = { 
 /**
@@ -31,4 +31,16 @@ destination: string | null,
 /**
  * Human-readable message, already redacted (see module docs).
  */
-message: string, };
+message: string, 
+/**
+ * Present when the event carried an `error` field (e.g. `error = %err`),
+ * already redacted (see module docs) — an error's `Display`/`Debug` output can embed a
+ * secret (a presigned URL, a token, a Service Account fragment) just as
+ * easily as `message` can.
+ */
+error: string | null, 
+/**
+ * Present when the event carried a `path` field (e.g. `path = %p.display()`),
+ * already redacted (see module docs).
+ */
+path: string | null, };

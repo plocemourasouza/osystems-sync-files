@@ -75,6 +75,51 @@ pub fn canonicalize_clean_sync(p: &Path) -> io::Result<PathBuf> {
     Ok(strip_verbatim(&canonical))
 }
 
+/// Windows system entries a scan must never touch: not descended into (when
+/// `p` is a directory) and not `stat`-ed (when `p` is a file). Matched on the
+/// final path component only, case-insensitively.
+///
+/// `System Volume Information` and `$RECYCLE.BIN` deny access to everyone but
+/// `SYSTEM` on every NTFS volume (os error 5 — `PermissionDenied`), so a scan
+/// that reaches them fails on every single run, not intermittently; skipping
+/// them by name avoids that permission round trip entirely instead of
+/// depending on `rescan::walk_dir`'s per-entry error tolerance to paper over
+/// it. `pagefile.sys` / `hiberfil.sys` / `swapfile.sys` are locked by the OS
+/// while it runs, and `DumpStack.log*` is written by the crash-dump service —
+/// none of them are ever a file this app is meant to sync.
+///
+/// Pure string logic — no filesystem access, no `#[cfg(windows)]` — so, like
+/// [`strip_verbatim`], it is unit-testable on every OS in CI even though the
+/// names it matches only ever occur on Windows.
+pub fn is_system_path(p: &Path) -> bool {
+    // Deliberately not `p.file_name()`: `std::path::Path` only splits on `/`
+    // on a non-Windows host, so a Windows-style `E:\System Volume
+    // Information` test string would come back as one single (wrong)
+    // component when this test runs on macOS/Linux CI. Manual splitting on
+    // both separators, same as `strip_verbatim` above, makes the result
+    // identical regardless of the host OS the test happens to run on.
+    let full = p.to_string_lossy();
+    let trimmed = full.trim_end_matches(['/', '\\']);
+    let name = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed);
+
+    const EXACT: &[&str] = &[
+        "System Volume Information",
+        "$RECYCLE.BIN",
+        "$Extend",
+        "Config.Msi",
+        "Recovery",
+        "$WinREAgent",
+        "pagefile.sys",
+        "hiberfil.sys",
+        "swapfile.sys",
+    ];
+    if EXACT.iter().any(|exact| exact.eq_ignore_ascii_case(name)) {
+        return true;
+    }
+
+    name.to_ascii_lowercase().starts_with("dumpstack.log")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +218,36 @@ mod tests {
             .await
             .expect_err("canonicalizing a missing path must error");
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn is_system_path_table() {
+        let cases = [
+            (r"E:\System Volume Information", true),
+            (r"E:\system volume information", true),
+            (r"E:\$RECYCLE.BIN", true),
+            (r"E:\$recycle.bin", true),
+            (r"C:\$Extend", true),
+            (r"C:\Config.Msi", true),
+            (r"C:\Recovery", true),
+            (r"C:\$WinREAgent", true),
+            (r"C:\pagefile.sys", true),
+            (r"C:\hiberfil.sys", true),
+            (r"C:\swapfile.sys", true),
+            (r"C:\DumpStack.log", true),
+            (r"C:\DumpStack.log.tmp", true),
+            (r"C:\dumpstack.log.tmp", true),
+            (r"E:\gravacoes\video.mp4", false),
+            (r"E:\gravacoes\Recovery Plan.docx", false),
+        ];
+
+        for (input, expected) in cases {
+            let path = Path::new(input);
+            assert_eq!(
+                is_system_path(path),
+                expected,
+                "is_system_path({input:?}) should be {expected}"
+            );
+        }
     }
 }

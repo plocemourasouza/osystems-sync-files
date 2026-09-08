@@ -248,9 +248,27 @@ fn handle_debounce_result(
                 }
             }
         }
+        // Os erros que o `notify` de fato reporta: `PathNotFound` (a pasta observada
+        // sumiu), `Io`, `WatchNotFound`, `MaxFilesWatch`, `InvalidConfig`, `Generic`.
+        //
+        // Nenhum deles significa "eventos perdidos": o `notify` 6.1.1 **não tem** como
+        // sinalizar um estouro do buffer do `ReadDirectoryChangesW` — `ErrorKind` não
+        // tem variante para isso e, em `notify-6.1.1/src/windows.rs`, `handle_event`
+        // ignora `bytes_written` e só olha `ERROR_OPERATION_ABORTED`, de modo que um
+        // estouro (que se anuncia justamente por `bytes_returned == 0`) passa
+        // despercebido. Por isso a recuperação não mora aqui: é a varredura de
+        // reconciliação periódica do `runtime.rs` (`RECONCILE_INTERVAL`). Não tente
+        // inferir perda destes erros nem casar texto de `ErrorKind::Generic`.
+        //
+        // O campo `error` importa: o `LogVisitor` o propaga para o console da UI e para
+        // o `app.log`, então é ele que torna a falha visível para o usuário.
         Err(errors) => {
             for error in errors {
-                tracing::warn!(error = %error, "backend do watcher reportou um erro");
+                tracing::warn!(
+                    error = %error,
+                    kind = ?error.kind,
+                    "backend do watcher reportou um erro",
+                );
             }
         }
     }

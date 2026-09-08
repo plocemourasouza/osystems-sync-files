@@ -116,9 +116,7 @@ async fn toggle_watcher(app: &AppHandle) {
     if state.runtime.is_paused() {
         let watch = state.config.read().await.watch.clone();
         if let Err(err) = state.runtime.resume(state.repo.clone(), watch).await {
-            if !matches!(err, osystems_sync_core::rescan::RescanError::NoPath) {
-                tracing::warn!(error = %err, "[tray] varredura do resume falhou");
-            }
+            crate::events::notify_rescan_failure(app, "tray-toggle-watcher", err);
         }
     } else {
         state.runtime.pause().await;
@@ -157,7 +155,7 @@ async fn rescan_from_tray(app: &AppHandle) {
     .await
     {
         Ok(report) => tracing::info!(enqueued = report.enqueued, "[tray] varredura concluída"),
-        Err(err) => tracing::warn!(error = %err, "[tray] varredura falhou"),
+        Err(err) => crate::events::notify_rescan_failure(app, "tray-manual-rescan", err),
     }
 
     match state.runtime.build_app_status(&state.repo).await {
