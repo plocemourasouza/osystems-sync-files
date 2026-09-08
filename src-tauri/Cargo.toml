@@ -5,7 +5,7 @@ resolver = "2"
 # Fonte da versão para os dois crates. NÃO editar à mão: é escrito por
 # `npm run version:sync` a partir do `VERSION` na raiz do repositório.
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 
 # Release profile for the Windows installer build (T-6.4, `.github/workflows/release.yml`).
 # `opt-level = 3` (speed) over `"s"` (size): the app's hot paths are CPU-bound —

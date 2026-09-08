@@ -16,7 +16,73 @@ se algum divergir.
 
 ---
 
-## [Não lançado]
+## [0.3.0] — 2026-09-08
+
+Corrige a detecção de arquivos em pasta monitorada e a cegueira do app a erros.
+Relatado em campo: monitorando a raiz de um volume (`E:\`), o console repetia
+`varredura manual falhou` sem nenhum detalhe e arquivos já presentes no disco
+nunca entravam na fila.
+
+### Corrigido
+
+- **A varredura abortava inteira no primeiro diretório ilegível.** `walk_dir`
+  propagava com `?` qualquer erro de `read_dir`/`next_entry`/`symlink_metadata`.
+  Na raiz de um volume Windows, `System Volume Information` nega acesso a todo
+  mundo (os error 5) — e essa negativa, sozinha, fazia a varredura retornar
+  `Err` com zero arquivos, em 100% das tentativas. Agora o erro é contado por
+  entrada e a varredura segue; só falha de verdade se a **raiz** for
+  inacessível. Efeito colateral do bug: como a tabela `files` nunca era
+  populada, o atalho `size+mtime` nunca ativava e cada tentativa re-hasheava
+  tudo do zero.
+- **Caminhos de sistema do Windows são pulados** antes do `stat`
+  (`System Volume Information`, `$RECYCLE.BIN`, `$Extend`, `Config.Msi`,
+  `Recovery`, `$WinREAgent`, `pagefile.sys`, `hiberfil.sys`, `swapfile.sys`,
+  `DumpStack.log*`).
+- **Todo detalhe de erro do app era descartado.** `LogVisitor` só guardava
+  `message`, `job_id` e `destination`, então **todo** `error = %err` do código
+  sumia — no console, no stream da UI e no `app.log` em JSON. `LogLine` passa a
+  carregar `error` e `path`, ambos com `redact` aplicado (um erro pode embutir
+  URL pré-assinada, token ou fragmento de Service Account).
+- **Quatro caminhos de varredura engoliam a falha em silêncio** (boot, retomada
+  de suspensão, tray e `resume_watcher`): agora emitem `rescan-failed`, com
+  banner na UI.
+- **"Atualizar Lista" descartava a rejeição do `invoke`** — o único canal que
+  carregava a mensagem real. Passa a exibi-la, junto de `scanned`, `errors` e
+  `skipped_unreadable`.
+- **Arquivo travado por antivírus ou gravador ficava 30 minutos mudo.** O
+  sharing violation era ligado a `_sharing_violation` e nunca logado, nem em
+  `debug`. Agora classifica os códigos 5 / 32 / 33 e loga com throttle (primeira
+  ocorrência, mudança de tipo, depois no máximo a cada 60 s). O aviso de timeout
+  carrega o último erro observado.
+
+### Adicionado
+
+- **Varredura de reconciliação periódica** (15 min). O `notify` 6.1.1 **não tem
+  como reportar** estouro do buffer do `ReadDirectoryChangesW`: o `handle_event`
+  do backend Windows ignora `_bytes_written` e só compara `error_code` com
+  `ERROR_OPERATION_ABORTED`. Copiar 100 GB estoura esse buffer e os eventos são
+  perdidos em silêncio, sem erro algum. Como a perda é indetectável por
+  construção, a recuperação tem que ser incondicional.
+- **Progresso da varredura na UI.** O botão mostra "Escaneando N/M" em vez de um
+  spinner mudo — uma varredura de 100 GB leva minutos e era indistinguível de
+  travamento.
+
+### Alterado
+
+- **Intake concorrente** (4 arquivos em voo). Era estritamente sequencial: um
+  arquivo de 9,44 GB segurava a detecção de todos os outros por até 30 min de
+  estabilização mais o SHA-256 completo. **A ordem da fila passa a refletir o
+  fim do hash, não a detecção** — um arquivo pequeno detectado depois de um
+  grande entra antes dele.
+- **Uma varredura por vez, em todo o processo.** Havia seis iniciadores (timer,
+  botão, tray, boot, retomada de suspensão, `resume_watcher`) sem coordenação
+  alguma; duas varreduras simultâneas sobre 100 GB dobram a leitura de disco e
+  disputam o mesmo disco que o uploader S3 precisa. A segunda chamada retorna
+  `AlreadyInProgress` em vez de enfileirar — repetir a caminhada não traz nada,
+  e a reconciliação é idempotente.
+- **`read_metadata` e a abertura exclusiva saíram do runtime async** para
+  `spawn_blocking`, com a semântica `share_mode(0)` intacta. Passa a importar
+  agora que são 4 arquivos estabilizando ao mesmo tempo.
 
 ### Interno
 
